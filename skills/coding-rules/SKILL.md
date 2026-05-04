@@ -21,9 +21,17 @@ Apply to all code written or modified. Verify every changed file complies before
 
 **Extract nested ternaries** — a single inline ternary is fine; two or more levels must become a named pure function above the component.
 
-**No single-use variables** — inline const/handlers that are only used once.
+**No unnecessary indirection** — don't create variables, functions, or aliases that add a layer without adding meaning. Inline directly at the call site. Prefer repetition over a spurious abstraction.
 - Don't: `const handleChange = (v) => ctx.setName(v); <Input onChange={handleChange} />`
 - Do: `<Input onChange={ctx.setName} />`
+- Don't: `const save = () => storage.save(); save();`
+- Do: `storage.save();`
+- Don't: `function formatDate(d: Date) { return toISOString(d); }`
+- Do: call `toISOString(d)` directly
+- Don't: `const isOwner = user.role === 'owner'; if (isOwner) { ... }`
+- Do: `if (user.role === 'owner') { ... }`
+- Don't: `const label = item.name.trim(); return <Text>{label}</Text>`
+- Do: `return <Text>{item.name.trim()}</Text>`
 
 **Named-param objects** — any regular function (not a component or hook) with 2+ params must use a single `params` object.
 - Don't: `fn(a: A, b: B, c: C)`
@@ -37,7 +45,7 @@ Apply to all code written or modified. Verify every changed file complies before
 
 ## React
 
-**No destructuring hook returns or props** — always use the whole object. Exception: tuple hooks (`useState`, `useReducer`, `useStorageState`) use array destructuring — that's their intended API.
+**No destructuring hook returns or props** — always use the whole object. Namespaced access (`result.data`, `props.nav`) makes it clear at the read site where each value comes from, without needing to trace back to the destructure. Exception: tuple hooks (`useState`, `useReducer`, `useStorageState`) use array destructuring — that's their intended API.
 - Don't: `const { data, loading } = useMyHook()` or `const MyComp = ({ nav, route }: Props) => ...`
 - Do: `const result = useMyHook(); result.data;` or `const MyComp = (props: Props) => { props.nav; }`
 

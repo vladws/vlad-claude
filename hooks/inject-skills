@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SKILLS_DIR="${PLUGIN_ROOT}/skills"
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+context=""
+loaded_names=()
+
+for skill_name in caveman coding-rules; do
+    skill_file="${SKILLS_DIR}/${skill_name}/SKILL.md"
+
+    if [[ ! -f "${skill_file}" ]]; then
+        continue
+    fi
+
+    skill_content=$(cat "${skill_file}" 2>&1)
+    escaped=$(escape_for_json "${skill_content}")
+    context="${context}<${skill_name}>\n${escaped}\n</${skill_name}>\n\n"
+    loaded_names+=("${skill_name}")
+done
+
+names_list=$(IFS=", "; echo "${loaded_names[*]}")
+header="vlad-claude plugin loaded: ${names_list}."
+escaped_context=$(escape_for_json "${header}\n\n${context}")
+
+escaped_header=$(escape_for_json "${header}")
+
+cat <<EOF
+{
+  "systemMessage": "${escaped_header}",
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "${escaped_context}"
+  }
+}
+EOF
+
+exit 0

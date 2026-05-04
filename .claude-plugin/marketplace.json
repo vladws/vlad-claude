@@ -1,0 +1,14 @@
+{
+  "name": "vlad-claude",
+  "owner": {
+    "name": "Volodymyr Dziubak"
+  },
+  "plugins": [
+    {
+      "name": "vlad-claude",
+      "source": "./",
+      "description": "Vlad's opinionated Claude setup — personal skills and conventions.",
+      "version": "1.0.0"
+    }
+  ]
+}

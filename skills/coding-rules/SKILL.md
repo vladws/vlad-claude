@@ -13,6 +13,10 @@ Apply to all code written or modified. Verify every changed file complies before
 
 **Curly braces on every block** — wrap all `if`, `else`, `for`, `while` bodies in `{}`, even single-liners.
 
+**Early returns over nested conditions** — validate preconditions at the top and return immediately; keep the happy path at the lowest indentation level. Deep nesting forces the reader to track multiple simultaneous conditions. Each guard clause reduces that cognitive load for everything that follows.
+- Don't: `if (user) { if (user.active) { if (hasPermission) { doWork(); } } }`
+- Do: `if (!user) { return; } if (!user.active) { return; } if (!hasPermission) { return; } doWork();`
+
 **Positive conditions first** — when there's an `if/else` or ternary with two branches, put the positive/truthy case first. Guard clauses (`if (!x) { return; }`) are exempt.
 - Don't: `!isReady ? fallback : content`
 - Do: `isReady ? content : fallback`
@@ -41,6 +45,10 @@ Apply to all code written or modified. Verify every changed file complies before
 - Don't: `type FooProps = { name: string }; const Foo = (props: FooProps) => ...`
 - Do: `const Foo = (props: { name: string }) => ...`
 
+**No switch statements** — use `if` with early returns instead. Switch statements encourage fall-through bugs, require explicit `break`s, and obscure the control flow. Early returns make each branch self-contained and the happy path obvious at the bottom.
+- Don't: `switch (status) { case 'a': ...; break; case 'b': ...; break; default: ... }`
+- Do: `if (status === 'a') { return ...; } if (status === 'b') { return ...; } return ...`
+
 ---
 
 ## React
@@ -54,6 +62,12 @@ Apply to all code written or modified. Verify every changed file complies before
 **No `useCallback`/`useMemo` by default** — only add them for a specific, identifiable performance problem. Never preemptively.
 
 **Prefer pure functions > components > hooks** when extracting shared logic. Reach for a hook only when React lifecycle is genuinely required.
+
+**Hoist stranglers to the top of the tree** — when feature flagging, A/B testing, or toggling between an experimental and existing variant of the same UI, place the branching logic as high as possible in the component tree (or call stack). Mount the new variant from a parent wrapper; don't weave the conditional into the existing component's internals. The original code path stays completely unmodified, the experiment is trivially removable, and the diff stays small.
+- Don't: add `isExperiment` checks scattered through `<PaymentForm>` internals
+- Do: in the parent, render `isExperiment ? <PaymentFormV2 /> : <PaymentForm />` — the original component is untouched
+- Don't: thread a `variant` prop down through 3 layers of components so a leaf can branch
+- Do: wrap at the highest common ancestor; each variant renders its own subtree independently
 
 ---
 

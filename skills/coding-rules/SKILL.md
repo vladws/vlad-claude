@@ -108,6 +108,8 @@ Applies broadly: never silently default any value whose absence indicates a prog
 
 **Namespace keys to their location** — when moving code, update all i18n keys to the destination's namespace. Pattern: `flow::screen::component::detail`
 
+**Keep keys in sync with component identity** — update i18n keys whenever: a component is renamed, split into smaller components, or moved to a different scope. Keys must reflect the current component name and location, not the original one.
+
 **Never reuse keys across components** — duplicate the key with a component-specific name, even if the text is identical. Shared keys are silent coupling.
 
 ---

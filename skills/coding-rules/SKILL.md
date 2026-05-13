@@ -1,6 +1,6 @@
 ---
 name: coding-rules
-description: Opinionated mandatory coding rules for TypeScript/React development. Contains non-negotiable standards covering code structure, React patterns, TypeScript safety, GraphQL, testing, i18n, and tooling. Consult this skill whenever writing or modifying any TypeScript or React code — components, hooks, GraphQL queries, tests, i18n strings — even if the user hasn't explicitly asked about coding standards. Also use when reviewing code, refactoring, or when something "looks off." These rules override default coding instincts.
+description: Opinionated mandatory coding rules for TypeScript/React development. Contains non-negotiable standards covering code structure, code co-location, React patterns, TypeScript safety, GraphQL, testing, i18n, and tooling. Consult this skill whenever writing or modifying any TypeScript or React code — components, hooks, GraphQL queries, tests, i18n strings — even if the user hasn't explicitly asked about coding standards. Also use when reviewing code, refactoring, or when something "looks off." These rules override default coding instincts.
 ---
 
 # Coding Rules
@@ -17,9 +17,11 @@ Apply to all code written or modified. Verify every changed file complies before
 - Don't: `if (user) { if (user.active) { if (hasPermission) { doWork(); } } }`
 - Do: `if (!user) { return; } if (!user.active) { return; } if (!hasPermission) { return; } doWork();`
 
-**Positive conditions first** — when there's an `if/else` or ternary with two branches, put the positive/truthy case first. Guard clauses (`if (!x) { return; }`) are exempt.
+**Positive conditions first** — when there's an `if/else` or ternary with two branches, put the positive/truthy case first. Applies equally to `=== null` / `=== undefined` checks in render ternaries — those are not guards, just inverted conditions. Only early-return guard clauses (`if (!x) { return; }`) are exempt.
 - Don't: `!isReady ? fallback : content`
 - Do: `isReady ? content : fallback`
+- Don't: `value === null ? <Empty /> : <Display value={value} />`
+- Do: `value !== null ? <Display value={value} /> : <Empty />`
 
 **No IIFEs in components** — extract `(() => { ... })()` as a named pure function above the component.
 
@@ -41,13 +43,42 @@ Apply to all code written or modified. Verify every changed file complies before
 - Don't: `fn(a: A, b: B, c: C)`
 - Do: `fn(params: { a: A; b: B; c: C })`
 
-**Inline prop/param types** — extract a type alias only if the same shape appears in 2+ places.
+**Inline prop/param types** — extract a type alias only if the same shape appears in 2+ places. Top-level components are not exempt — if a component's `Props` type is used exactly once (at its own signature), inline it.
 - Don't: `type FooProps = { name: string }; const Foo = (props: FooProps) => ...`
 - Do: `const Foo = (props: { name: string }) => ...`
+- Don't (still wrong, even for a top-level/exported component): `type Props = { cartId: string }; export const Checkout = (props: Props) => ...`
+- Do: `export const Checkout = (props: { cartId: string }) => ...`
 
 **No switch statements** — use `if` with early returns instead. Switch statements encourage fall-through bugs, require explicit `break`s, and obscure the control flow. Early returns make each branch self-contained and the happy path obvious at the bottom.
 - Don't: `switch (status) { case 'a': ...; break; case 'b': ...; break; default: ... }`
 - Do: `if (status === 'a') { return ...; } if (status === 'b') { return ...; } return ...`
+
+---
+
+## Co-location
+
+Code that changes together should live together. Distance between related pieces forces the reader to scroll, search, or mentally hold context that should be local — every extra hop is a chance to lose the thread.
+
+**Extract cohesive UI clusters into their own component** — when a set of related JSX, the helpers it calls, and (if present) the state and handlers it touches are used only together and nowhere else in the parent, pull them into a child component. Cohesion is the trigger, not size, and **state is not required**. Stateless clusters extract just as readily as stateful ones.
+
+Three patterns that almost always want extracting:
+- **Form fields / inputs**: an input + its state + its `onChange` + surrounding markup that no other part of the parent reads
+- **List rows**: the `<li>`/`<tr>`/row-shaped JSX inside a `.map(...)` that calls helpers (`formatX`, `iconFor`, `truncate`) used only by that row, even when the row has no state of its own
+- **Conditional sub-views**: a branch of JSX rendered under one condition, with its own helpers and possibly its own state
+
+The test: if every piece of the cluster — state, handlers, helpers, markup — can move into a child without the parent needing any of them, it belongs in the child. Don't lift state up "just in case" a sibling needs it later; wait until something actually does.
+- Don't: parent holds `commentText` state, an `onCommentChange` handler, and 20 lines of comment-input JSX while nothing else in the parent reads any of them
+- Do: `<CommentInput onSubmit={...} />` owns the state, the handler, and the markup; the parent just mounts it
+- Don't: an 8-line `<li>` block inside `.map(...)` calling `accountIcon`, `formatBalance`, `formatOpenedDate` helpers that exist nowhere else in the file
+- Do: `<AccountRow account={a} />` owns the row markup and all three helpers; the parent file no longer mentions them
+
+**Declare variables in the narrowest scope that uses them** — push every declaration down to the block where it's first read. A value used only inside one `if` branch belongs inside that branch, not at the top of the function. Top-of-function declarations are reserved for values that genuinely live across the whole function body. Narrow scope makes the variable's lifetime obvious and stops the reader from tracking values that aren't relevant yet.
+- Don't: declare `const formatted = format(date, 'yyyy-MM-dd');` at the top, then use it only inside one branch 30 lines later
+- Do: declare `formatted` inside the branch that uses it
+- Don't: top-of-function `let result;` reassigned inside each branch
+- Do: `return` directly from each branch
+
+**Helpers travel with their only caller** — when a pure function, constant, or type alias is used by exactly one component (or one sub-cluster), it belongs in that component's scope or file. Helpers stranded at the top of a parent file but called only from one child are noise the reader scans past to reach what they came for. **When you extract a sub-component, every helper the parent no longer calls moves with it — never leave orphan helpers behind in the parent file.** If multiple children use a helper, hoist it to the nearest shared scope, and no further. A utility used only within one file should not graduate to a shared module.
 
 ---
 

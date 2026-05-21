@@ -25,78 +25,29 @@ Implement the plan as described. Standard engineering rules apply:
 - Keep the diff scoped to what the PRD calls for. Out-of-scope cleanups go in a separate change.
 - If a decision in the PRD turns out to be wrong or impossible once you hit the code, stop and tell the user — do not silently substitute your own plan.
 
-When implementation is done, capture the list of modified files with `git diff --name-only` (include both staged and unstaged). This list drives Phase 3.
+When implementation is done, hand off to Phase 3. The working tree now holds exactly the changes you made — the audit phase will pick them up from git directly.
 
-## Phase 3 — Audit & auto-fix
+## Phase 3 — Audit & auto-fix (delegated to `self-review`)
 
-Audit every modified file against the `coding-rules` skill in parallel, then auto-fix any violations. This phase always runs after implementation, even if you think the code is clean — the point is independent review.
+Audit every modified file against the `coding-rules` skill and auto-fix violations. This phase always runs after implementation, even if you think the code is clean — the point is independent review.
 
-### Locate the coding-rules content
+The full audit-and-fix workflow lives in the `self-review` skill. Do not re-implement it here.
 
-Sub-agents you spawn cannot rely on auto-loading skills, so you must inline the full rule text into their prompts. Before spawning anything in Phase 3, load the `coding-rules` skill content once:
+1. Locate the `self-review` skill among the skills available to you — it ships in the same plugin as this skill (typically a sibling directory). Resolve the path at runtime; do not hardcode it.
+2. Read `self-review/SKILL.md` in full and execute its Phases 1–3 verbatim. Treat its instructions as if the user had just typed `/self-review` — the self-review skill will derive the file list from git, load `coding-rules`, spawn the audit and fix sub-agents, and re-audit after fixing.
+3. If you cannot locate the `self-review` skill, stop and tell the user: Phase 3 cannot proceed without it. Do not silently skip the audit.
 
-1. Find it by name in the available skills (it ships in the same plugin as this skill — typically as a sibling directory). Do not hardcode a path; resolve it at runtime by locating the `coding-rules` skill among the skills already advertised to you.
-2. Read its `SKILL.md` file in full and hold the text in memory for the duration of Phase 3.
-3. If you cannot locate `coding-rules`, stop and tell the user: Phase 3 cannot proceed without the rule definitions. Do not silently skip the audit.
-
-### Sharding the audit
-
-Pick the sharding strategy based on the diff size:
-
-- **1–3 files**: one audit sub-agent per file. Maximum signal per agent.
-- **4–10 files**: ~2–3 files per sub-agent, grouped by directory or feature when possible so each agent sees related context together.
-- **11+ files**: ~5 files per sub-agent. Cap total parallelism around 8 agents — beyond that, the overhead outweighs the speedup.
-
-Files that are only renamed/moved without content changes can be skipped. Generated files, lockfiles, and `*.snap` should also be skipped.
-
-### Spawning audit agents
-
-Spawn all audit sub-agents **in a single message with multiple Agent tool calls** so they run concurrently. Use `subagent_type: "general-purpose"`.
-
-Each audit agent's prompt must contain:
-
-1. The exact file paths it owns (absolute paths).
-2. The full text of the `coding-rules` skill — embed the content you loaded in the "Locate the coding-rules content" step. Inline it; do not pass a file path. The sub-agent has no guarantee it can resolve the skill on its own.
-3. An instruction to read each file, walk every rule in the embedded coding-rules text, and report violations as a structured list.
-4. The required output format (below).
-
-Required output format from each audit agent:
-
-```
-## <absolute/file/path>
-- [<rule-name>] <line-number>: <one-line description of the violation> → <one-line fix>
-- [<rule-name>] <line-number>: ...
-
-## <absolute/file/path>
-- (no violations)
-```
-
-Tell the audit agent: do not modify any files, do not run formatters, do not propose unrelated improvements. Only report violations of the rules in the embedded coding-rules skill. Empty diffs (file in list but no actual changes) → report "no violations".
-
-### Aggregating violations
-
-Collect the structured output from every audit agent. Build one consolidated violation list keyed by file path. If two agents disagree about a file (shouldn't happen with disjoint sharding, but check), the stricter reading wins.
-
-If the consolidated list is empty across all files, skip the fix phase and report success.
-
-### Spawning the fix agent
-
-Spawn a single sub-agent (`subagent_type: "general-purpose"`) with:
-
-1. The consolidated violation list (verbatim).
-2. The full text of the `coding-rules` skill inlined again — reuse the content you loaded earlier; the fix agent needs the rule definitions to apply fixes correctly.
-3. The instruction: apply every listed fix, do not introduce new functionality, do not touch files not in the list, do not modify behavior — only refactor to comply. If a fix conflicts with the PRD's intent, leave it and report the conflict back instead of forcing the change.
-
-After the fix agent returns, re-run `git diff --name-only` and re-spawn audit agents **only on files the fix agent touched**. This catches violations the fix accidentally introduced. Cap this at one extra audit round — if violations still remain after that, report them to the user without looping further.
+Engage-specific note: when the review skill's fix agent encounters a violation whose fix would conflict with the PRD's intent, it should leave the code alone and report the conflict back. Make sure to surface those conflicts to the user in the final summary instead of forcing the change.
 
 ## Final summary
 
-Print a short summary to the user:
+Once `self-review` finishes, print a short summary to the user that combines engage and review context:
 
 - PRD implemented: `<path>`
 - Files changed: `<count>`
-- Violations found: `<count>` across `<n>` files
-- Violations fixed: `<count>`
+- Violations found: `<count>` across `<n>` files (from review)
+- Violations fixed: `<count>` (from review)
 - Violations remaining: `<count>` (list them inline if non-zero)
+- PRD conflicts (if any): `<list>`
 
 Do not commit, stage, or push. The user takes it from here.

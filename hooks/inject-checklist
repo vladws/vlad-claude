@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SKILL_FILE="${PLUGIN_ROOT}/skills/coding-rules/SKILL.md"
+
+if [[ ! -f "${SKILL_FILE}" ]]; then
+    exit 0
+fi
+
+checklist=$(awk '
+    /<!-- BEGIN PREFLIGHT -->/ { flag=1; next }
+    /<!-- END PREFLIGHT -->/   { flag=0 }
+    flag
+' "${SKILL_FILE}")
+
+if [[ -z "${checklist}" ]]; then
+    exit 0
+fi
+
+context="About to write or modify code. Apply every rule below — they override your default coding instincts:
+
+${checklist}
+
+For full rationale and examples for any rule, invoke the \`coding-rules\` skill or read skills/coding-rules/SKILL.md."
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+escaped=$(escape_for_json "${context}")
+
+cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "${escaped}"
+  }
+}
+EOF
+
+exit 0

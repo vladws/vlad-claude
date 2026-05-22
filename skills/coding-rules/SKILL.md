@@ -42,6 +42,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 - **Helpers travel with their only caller** — when extracting a sub-component, every helper the parent no longer calls moves with it. No orphans left behind.
 - **Narrowest scope for variables** — declare in the block that uses them, not at the top of the function.
 - **Extract cohesive UI clusters** — form fields, list rows, conditional sub-views with their own helpers (and optional state) belong in their own component. Cohesion is the trigger, not size; state is not required.
+- **Derive at the point of use** — pass entities (or entity IDs) down; compute derived values where they're consumed. Don't pre-compute in the parent and thread results as props. Duplicating cheap derivation calls across consumers beats centralizing them upstream.
 
 **Data safety**
 - **No silent defaults** (`?? 0`, etc.) for money or any value whose absence is a programming bug. Throw or guard.
@@ -166,6 +167,17 @@ Three patterns that almost always want extracting:
 - **Conditional sub-views**: a branch of JSX rendered under one condition, with its own helpers and possibly its own state
 
 The test: if every piece of the cluster — state, handlers, helpers, markup — can move into a child without the parent needing any of them, it belongs in the child. Don't lift state up "just in case" a sibling needs it later; wait until something actually does.
+
+**Derive at the point of use** — when a child needs values derived from an entity (a formatted name, a computed status, a flag inferred from a few fields), pass the entity itself (or its ID) and derive at the consumer. Don't pre-compute derived values in the parent — or worse, at the API boundary — and thread the results down as props. Duplicating a one-line derivation across two consumers is preferable to centralizing it upstream.
+
+Why: pre-computing pulls derivation logic away from where it's read, bloats prop interfaces, and couples the parent to every child's display needs. When the derivation rule changes (a new field, an edge case, a different format), the change belongs next to the JSX that renders it, not three layers up. Pure derivations are cheap — calling `formatName(user)` in three siblings costs nothing measurable and pays back every time someone reads the code.
+
+- Don't: parent computes `const fullName = formatName(user); const isPremium = user.tier === 'gold';` and passes `fullName` and `isPremium` as props to children
+- Do: parent passes `user` (or `userId`); each child calls `formatName(props.user)` / checks `props.user.tier === 'gold'` where the value is rendered
+- Don't: an API-shaped object gets unpacked into a wide bag of pre-derived flags at the top of the screen, then passed down
+- Do: pass the entity; let each leaf reach for the field or derivation it actually needs
+
+Exception: if a derivation is measured-expensive, or the derived value *is* the contract of a reusable component (e.g., a generic `<Badge label={...} />`), passing the derived value is correct.
 
 ---
 

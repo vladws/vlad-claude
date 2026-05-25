@@ -27,7 +27,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 
 **React**
 - **No `useCallback` / `useMemo`** unless there's a measured perf problem.
-- **No destructuring hook returns or props** — use the whole object (`result.data`, `props.nav`). Tuple hooks (`useState`, `useReducer`) excepted.
+- **No destructuring hook returns or props** — use the whole object (`result.data`, `props.nav`). Exception: positional-tuple APIs whose contract is an ordered array of parallel results (`useState`, `useReducer`, `useStorageState`, `useRead(...)` with multiple prepared queries, `Promise.all([...])`).
 - **Prefer pure functions > components > hooks** when extracting shared logic.
 - **No business logic in `useEffect`** — effects sync with external systems. Move logic into the handler that sets the value.
 - **Hoist stranglers to the top of the tree** — branch feature flags / experiments at a parent wrapper, never inside the existing component.
@@ -119,9 +119,10 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 
 **No `useCallback` / `useMemo` by default** — only add them for a specific, identifiable performance problem. Never preemptively.
 
-**No destructuring hook returns or props** — always use the whole object. Namespaced access (`result.data`, `props.nav`) makes it clear at the read site where each value comes from, without needing to trace back to the destructure. Exception: tuple hooks (`useState`, `useReducer`, `useStorageState`) use array destructuring — that's their intended API.
+**No destructuring hook returns or props** — always use the whole object. Namespaced access (`result.data`, `props.nav`) makes it clear at the read site where each value comes from, without needing to trace back to the destructure. Exception: positional-tuple APIs whose contract is an ordered array of parallel results — array destructuring is their intended shape, and bundling them under one name would obscure that each slot is an independent value. Covers tuple hooks (`useState`, `useReducer`, `useStorageState`), parallel-query hooks like `useRead(queryA.usePrepared(), queryB.usePrepared())`, and `Promise.all([...])`.
 - Don't: `const { data, loading } = useMyHook()` or `const MyComp = ({ nav, route }: Props) => ...`
 - Do: `const result = useMyHook(); result.data;` or `const MyComp = (props: Props) => { props.nav; }`
+- Tuple exception: `const [a, b, c] = useRead(qA.usePrepared(), qB.usePrepared(), qC.usePrepared())`, `const [users, posts] = await Promise.all([fetchUsers(), fetchPosts()])`
 
 **Prefer pure functions > components > hooks** when extracting shared logic. Reach for a hook only when React lifecycle is genuinely required.
 

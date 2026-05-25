@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CAVEMAN_FILE="${PLUGIN_ROOT}/skills/caveman/SKILL.md"
+SKILL_FILE="${PLUGIN_ROOT}/skills/tight-prose/SKILL.md"
 
-if [[ ! -f "${CAVEMAN_FILE}" ]]; then
+if [[ ! -f "${SKILL_FILE}" ]]; then
     exit 0
 fi
 
@@ -13,7 +13,7 @@ reinforcement=$(awk '
     /<!-- BEGIN REINFORCEMENT -->/ { flag=1; next }
     /<!-- END REINFORCEMENT -->/   { flag=0 }
     flag
-' "${CAVEMAN_FILE}")
+' "${SKILL_FILE}")
 
 if [[ -z "${reinforcement}" ]]; then
     exit 0

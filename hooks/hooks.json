@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/reinforce-caveman\"",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/reinforce-style\"",
             "async": false
           }
         ]

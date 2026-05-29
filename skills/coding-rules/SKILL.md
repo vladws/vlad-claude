@@ -19,7 +19,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 - **Inline single-use `Props`/param types** — extract a type alias only if reused in 2+ places. Top-level/exported components are not exempt.
 - **No nested ternaries** — one ternary is fine; 2+ levels become a named pure function above the component.
 - **Positive conditions first** in `if/else` and 2-branch ternaries. Only early-return guards (`if (!x) return`) are exempt.
-- **Named-param objects** for any regular function (not a component or hook) with 2+ params.
+- **Named-param objects** for any regular function (not a component or hook) with 2+ params. Name the object `params` and reach through it (`params.x`) — never destructure it in the signature.
 - **Early returns over nested conditions** — validate preconditions at the top; keep the happy path at the lowest indent.
 - **No `switch`** — use `if` with early returns.
 - **No IIFEs in components** — extract `(() => {...})()` as a named pure function above.
@@ -27,7 +27,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 
 **React**
 - **No `useCallback` / `useMemo`** unless there's a measured perf problem.
-- **No destructuring hook returns or props** — use the whole object (`result.data`, `props.nav`). Exception: positional-tuple APIs whose contract is an ordered array of parallel results (`useState`, `useReducer`, `useStorageState`, `useRead(...)` with multiple prepared queries, `Promise.all([...])`).
+- **No destructuring hook returns, props, or function params** — use the whole object (`result.data`, `props.nav`, `params.queryTokens`). Covers the `params` object the named-param rule requires: never destructure it in the signature. Exception: positional-tuple APIs whose contract is an ordered array of parallel results (`useState`, `useReducer`, `useStorageState`, `useRead(...)` with multiple prepared queries, `Promise.all([...])`).
 - **Prefer pure functions > components > hooks** when extracting shared logic.
 - **No business logic in `useEffect`** — effects sync with external systems. Move logic into the handler that sets the value.
 - **Hoist stranglers to the top of the tree** — branch feature flags / experiments at a parent wrapper, never inside the existing component.
@@ -97,9 +97,10 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 - Don't: `value === null ? <Empty /> : <Display value={value} />`
 - Do: `value !== null ? <Display value={value} /> : <Empty />`
 
-**Named-param objects** — any regular function (not a component or hook) with 2+ params must use a single `params` object.
+**Named-param objects** — any regular function (not a component or hook) with 2+ params must use a single `params` object. Keep it whole: name the argument `params` and read fields through `params.x` in the body. Destructuring the object in the signature (`fn({ a, b }: {...})`) reintroduces the bare names the destructuring rule below forbids — the named-param rule and the no-destructuring rule are the same principle applied to function arguments.
 - Don't: `fn(a: A, b: B, c: C)`
-- Do: `fn(params: { a: A; b: B; c: C })`
+- Don't: `fn({ a, b, c }: { a: A; b: B; c: C })` — destructured signature, same problem as destructuring a hook return
+- Do: `fn(params: { a: A; b: B; c: C })` then read `params.a`
 
 **Early returns over nested conditions** — validate preconditions at the top and return immediately; keep the happy path at the lowest indentation level. Deep nesting forces the reader to track multiple simultaneous conditions; each guard clause reduces that load for everything that follows.
 - Don't: `if (user) { if (user.active) { if (hasPermission) { doWork(); } } }`
@@ -119,9 +120,9 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 
 **No `useCallback` / `useMemo` by default** — only add them for a specific, identifiable performance problem. Never preemptively.
 
-**No destructuring hook returns or props** — always use the whole object. Namespaced access (`result.data`, `props.nav`) makes it clear at the read site where each value comes from, without needing to trace back to the destructure. Exception: positional-tuple APIs whose contract is an ordered array of parallel results — array destructuring is their intended shape, and bundling them under one name would obscure that each slot is an independent value. Covers tuple hooks (`useState`, `useReducer`, `useStorageState`), parallel-query hooks like `useRead(queryA.usePrepared(), queryB.usePrepared())`, and `Promise.all([...])`.
-- Don't: `const { data, loading } = useMyHook()` or `const MyComp = ({ nav, route }: Props) => ...`
-- Do: `const result = useMyHook(); result.data;` or `const MyComp = (props: Props) => { props.nav; }`
+**No destructuring hook returns, props, or function params** — always keep the whole object and reach through it. Namespaced access (`result.data`, `props.nav`, `params.queryTokens`) makes it clear at the read site where each value comes from, without needing to trace back to the destructure. This applies anywhere an object arrives as a single value: hook returns, component props, and the `params` object the named-param rule requires for regular functions. A destructured signature — `function score({ queryTokens, haystackText }: {...})` — is the same violation as `const { data } = useMyHook()`; it just hides in the parameter list, which is exactly why it slips past review. Exception: positional-tuple APIs whose contract is an ordered array of parallel results — array destructuring is their intended shape, and bundling them under one name would obscure that each slot is an independent value. Covers tuple hooks (`useState`, `useReducer`, `useStorageState`), parallel-query hooks like `useRead(queryA.usePrepared(), queryB.usePrepared())`, and `Promise.all([...])`.
+- Don't: `const { data, loading } = useMyHook()`, `const MyComp = ({ nav, route }: Props) => ...`, or `function score({ queryTokens, haystackText }: { queryTokens: readonly string[]; haystackText: string }) { ... }`
+- Do: `const result = useMyHook(); result.data;`, `const MyComp = (props: Props) => { props.nav; }`, or `function score(params: { queryTokens: readonly string[]; haystackText: string }) { params.queryTokens; }`
 - Tuple exception: `const [a, b, c] = useRead(qA.usePrepared(), qB.usePrepared(), qC.usePrepared())`, `const [users, posts] = await Promise.all([fetchUsers(), fetchPosts()])`
 
 **Prefer pure functions > components > hooks** when extracting shared logic. Reach for a hook only when React lifecycle is genuinely required.

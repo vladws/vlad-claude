@@ -29,6 +29,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 - **No `useCallback` / `useMemo`** unless there's a measured perf problem.
 - **No destructuring hook returns, props, or function params** — use the whole object (`result.data`, `props.nav`, `params.queryTokens`). Covers the `params` object the named-param rule requires: never destructure it in the signature. Exception: positional-tuple APIs whose contract is an ordered array of parallel results (`useState`, `useReducer`, `useStorageState`, `useRead(...)` with multiple prepared queries, `Promise.all([...])`).
 - **Prefer pure functions > components > hooks** when extracting shared logic.
+- **Render components, don't call JSX-returning functions** — never `{renderThing(x)}` in JSX. A function returning JSX is a component: a single 2-way fork inlines as one ternary in the parent; 3+ branches or any state/helpers/non-trivial markup become a real component rendered as `<Thing {...props} />` with early returns in its body.
 - **No business logic in `useEffect`** — effects sync with external systems. Move logic into the handler that sets the value.
 - **Hoist stranglers to the top of the tree** — branch feature flags / experiments at a parent wrapper, never inside the existing component.
 
@@ -126,6 +127,16 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 - Tuple exception: `const [a, b, c] = useRead(qA.usePrepared(), qB.usePrepared(), qC.usePrepared())`, `const [users, posts] = await Promise.all([fetchUsers(), fetchPosts()])`
 
 **Prefer pure functions > components > hooks** when extracting shared logic. Reach for a hook only when React lifecycle is genuinely required.
+
+**Render components; never call a JSX-returning function in render** — a function that returns JSX is a component wearing a function's clothes. Calling it as `{selectThing(params)}` inlines its output into the parent with no component identity: no fiber boundary, no name in React DevTools, no independent re-render, and it silently breaks the rules of hooks the moment that function ever needs one. The fix depends on how much the function does:
+- **A single 2-way fork** — inline one ternary in the parent's JSX. No function, no component.
+- **3+ branches, or any state / helpers / non-trivial markup** — extract a real component and render it as `<SelectThing {...props} />`. Its body uses early returns, which keeps the branching readable without a nested ternary.
+
+Why a real component beats a function call: the element gets its own place in the tree, so React can name it, memoize it, and re-render it independently, and any future hook inside it is legal. A bare function call gets none of that — it looks like a value but secretly expands the parent's render.
+
+- Don't: `function selectSendDataLoader(params: FlowSendNavigatorParams) { if (params.variant === 'fulfill-request') { return <FulfillRequestDataLoader params={params} />; } if (params.contactId !== undefined) { return <SendDataLoaderWithContact params={params} contactId={params.contactId} />; } return <SendDataLoader params={params} />; }` called as `{selectSendDataLoader(params)}`
+- Do (3-way → real component): render `<SelectSendDataLoader params={params} />`, where `SelectSendDataLoader` holds the same three branches as early returns in its body
+- Do (2-way → inline): `{user.isPremium ? <PremiumBadge user={user} /> : <StandardBadge user={user} />}` directly in the parent — no extracted function
 
 **No business logic in `useEffect`** — effects sync with external systems. If an effect runs only because a value changed that you set elsewhere, move the logic into the handler that sets it.
 

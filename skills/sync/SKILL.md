@@ -1,24 +1,23 @@
 ---
 name: sync
 description: >
-  Sync web and mobile implementations of the same feature, maintaining a
-  verbatim 1-to-1 port between a source and destination directory. Use when
-  the user invokes /sync, asks to "sync web to mobile", "sync mobile to web",
-  "port this feature to the other platform", "propagate changes to mobile/web",
-  or says something like "keep web and mobile in sync". Also trigger when the
-  user asks to set up a sync relationship between two feature folders, or when
-  they've changed the source flow and want the destination updated. Do NOT
-  trigger for general "sync" meanings like git sync, database sync, or
-  unrelated file operations.
+  Port a mobile feature flow to web, maintaining a verbatim 1-to-1 sync
+  between a mobile source directory and a web destination directory. Use when
+  the user invokes /sync, asks to "sync mobile to web", "port this feature to
+  web", "propagate mobile changes to web", or says something like "keep mobile
+  and web in sync". Also trigger when the user asks to set up a sync
+  relationship between a mobile and web feature folder, or when they've changed
+  the mobile flow and want the web version updated. Do NOT trigger for
+  web-to-mobile direction, git sync, database sync, or unrelated file
+  operations.
 ---
 
-Sync a source feature flow to a destination platform, maintaining a verbatim
-1-to-1 port. The sync direction is **unidirectional** — established once at
-setup and recorded in CLAUDE.md. Source → destination is fixed; to reverse the
-direction, the user must explicitly re-run setup with swapped arguments.
+Port a mobile feature flow to web, maintaining a verbatim 1-to-1 sync. The
+direction is always **mobile → web**. The mobile directory is the source of
+truth; the web directory is the destination.
 
-Runs in three phases: identify flows, set up documentation, then perform the
-sync.
+Runs in four phases: identify flows, set up documentation, assess scope, then
+perform the sync.
 
 ---
 
@@ -41,8 +40,8 @@ pairs already exist (check for `CLAUDE.md` files with sync metadata). Present
 the candidates with their full paths:
 
 > "I found these candidates:
->  - Source (web): `src/features/e-transfer/web/`
->  - Destination (mobile): `src/features/e-transfer/mobile/`
+>  - Source (mobile): `src/features/e-transfer/mobile/`
+>  - Destination (web): `src/features/e-transfer/web/`
 >
 > Is this correct, or should I use different paths?"
 
@@ -140,51 +139,200 @@ and append or replace only the `## Sync` section.
 
 ---
 
-## Phase 3 — Perform the sync
+## Phase 3 — Assess scope
+
+Before porting any files, identify which screens need to be included in this
+sync run. All logic within the agreed scope is ported verbatim — this phase
+only determines which screens are in scope.
+
+### Identify screens in the source
+
+Scan the mobile source directory for screen-level components. A screen is a
+top-level component registered in a navigator or exported as an entry point
+for a route. Look at:
+- Navigator files (they enumerate registered screens explicitly)
+- Top-level component files that are imported by navigators
+- A `screens/` subdirectory if one exists
+
+Build a flat list: screen name → source file path.
+
+### Filter against existing exclusions
+
+Read the destination CLAUDE.md. Remove from the list any screens already
+recorded under "Explicit exclusions (user-confirmed)". These have been
+previously decided and do not need to be re-asked.
+
+### Check which screens are new
+
+For each remaining screen, check whether a corresponding file already exists
+in the destination directory (same relative path). Split the list into:
+- **Already ported**: file exists in destination
+- **New**: file does not exist in destination
+
+Do not present already-ported screens to the user — they are in scope by
+default (the sync will update them).
+
+### Confirm new screens with the user
+
+Present the new screens and ask which to include:
+
+> "The following screens exist in mobile but have no web equivalent yet:
+>
+> - `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
+> - `ReviewScreen` (`screens/review-screen.tsx`)
+> - `SummaryScreen` (`screens/summary-screen.tsx`)
+>
+> Which of these should I port in this run? (Answer with all, none, or a
+> list)"
+
+For any screen the user excludes, add it to "Explicit exclusions
+(user-confirmed)" in the destination CLAUDE.md before proceeding. The
+sub-components of an excluded screen are also excluded — do not port them.
+
+Do not proceed to Phase 4 until the user has confirmed scope.
+
+---
+
+## Phase 4 — Perform the sync
 
 Walk the source directory and produce a verbatim port in the destination.
 
+### The data flow invariant (highest priority)
+
+The sequence of data flow — what queries run, in what order, behind what
+conditions, and when their cache gets invalidated — **is** the feature. Two
+platforms that render identical pixels but fetch or invalidate data
+differently are not in sync; they will diverge in behavior the moment a
+backend response is slow, a user backgrounds the app, or a mutation lands.
+Preserve this sequence before anything else.
+
+Concretely, when porting any file that touches data:
+
+- **Conditional queries.** If the source fires a query inside a conditional
+  branch — `{condition && <ComponentThatQueries />}`, a hook called from a
+  child that only mounts when a flag is true, a query guarded by a
+  `skip`/`enabled` argument tied to upstream state — the destination must
+  preserve the same conditional structure. Do not hoist the query to a
+  common parent and pass data down. Do not turn a gated query into an
+  always-on one. Do not flatten the condition by rendering the component
+  unconditionally and "handling it later". The query must fire under the
+  same conditions, in the same place, at the same point in the render tree.
+
+- **Cache invalidation.** If the source invalidates a cache key at a
+  specific point — after a particular mutation, on unmount of a particular
+  screen, inside a particular conditional branch, after a specific user
+  action — the destination must invalidate the same key at the same point.
+  Do not relocate invalidations to a "more convenient" hook. Do not
+  consolidate multiple invalidations into one. Do not omit them because the
+  destination platform "would refetch anyway".
+
+- **Order of operations.** Queries, mutations, and effects that run in a
+  particular order in the source must run in the same order in the
+  destination. Hooks that depend on each other's results must remain in the
+  same relative position. If the source reads value A, then conditionally
+  fires query B based on A, then invalidates key C after B resolves, the
+  destination must do the same three things in the same order.
+
+Before writing any destination file, trace its data flow: list every query,
+the condition guarding it, and every invalidation point it triggers. Carry
+that list to the destination unchanged. If any item cannot be carried over
+verbatim (because the destination platform lacks the equivalent API), treat
+it as a platform conflict and follow the "Resolving platform conflicts"
+steps below — do not silently restructure.
+
+### What "verbatim" means
+
+Beyond the data flow invariant above, the following must also be preserved
+exactly:
+- File and folder names
+- Component hierarchy and nesting
+- The order of operations within a component (hooks called in the same order,
+  effects running in the same sequence, renders structured the same way)
+- Logic that spans multiple files must remain in the same relative positions
+  across those files — do not collapse two source files into one or split one
+  into two without explicit user confirmation
+
+The following are adapted for the destination platform (not preserved
+verbatim): UI primitive components, navigation APIs, platform-specific SDKs.
+Everything else is ported as-is.
+
+### Determine the sync scope
+
+Do not walk the entire source directory. The sync covers only the feature's
+source files — the transitive closure of what the source's `index.ts` imports.
+
+1. Read `<source>/src/index.ts` (or `<source>/index.ts` if no `src/`
+   subdirectory exists). This is the entry point.
+2. Collect every file imported — directly or transitively — by the exports in
+   that entry point. This set is the sync scope.
+3. Exclude from scope regardless of imports:
+   - Ambient type declaration files (`*.d.ts`)
+   - The entry point file itself (`index.ts`) — its shape differs per platform
+   - Test setup, config, and build files (`jest.config.*`, `tsconfig.*`,
+     `project.json`, `*.settings.json`, `test-setup.*`)
+
+Only files in this computed scope are candidates for syncing.
+
 ### File-level mapping
 
-For every file in source:
+For every file in the sync scope:
 1. Compute the corresponding destination path by replacing the source root with
    the destination root (preserving all intermediate directories).
-2. Determine if the file is excluded (matches an explicit exclusion from
-   CLAUDE.md or is a known platform-only config file). If excluded, skip it
-   and note it in the sync report.
-3. If not excluded: apply platform-level adaptations (see below), then write
-   the result to the destination path. Create intermediate directories as
-   needed.
+2. If the file matches an explicit user-confirmed exclusion from the destination
+   CLAUDE.md, skip it and note it in the sync report.
+3. If the file's implementation is platform-specific (e.g. a React Navigation
+   navigator, a native wallet integration), it is NOT skipped — it still exists
+   in the destination as a structural equivalent. Surface the conflict to the
+   user following the "Resolving platform conflicts" steps below, then create
+   the destination-platform version that preserves the same structural role.
+4. If no conflict: write the ported content to the destination path. Create
+   intermediate directories as needed.
 
 ### Resolving platform conflicts
 
 Port each file verbatim. When you encounter something that cannot be carried
 over as-is — a component, import, API, or pattern that does not exist on the
-destination platform — work through this sequence:
+destination platform — work through this sequence.
+
+The required process is strictly sequential: **one file → one conflict → one
+user response → continue**. There is no lookahead, no accumulation, no
+batching.
+
+Concretely:
+1. Pick the next file to port.
+2. Read it and attempt to port it verbatim.
+3. If you hit a conflict **in that file**, stop immediately — do not read any
+   other files to find more conflicts first.
+4. Resolve that single conflict with the user (see steps below).
+5. Finish porting the current file.
+6. Move to the next file and repeat from step 2.
+
+Do not "find all the platform conflicts" before starting. Do not accumulate a
+list of conflicts across files and present them together. Each conflict gets
+its own isolated exchange with the user — one conflict per message, one
+message per conflict.
 
 **Step 1 — Check approved exceptions**
 
-Read the `## Sync` section of the destination CLAUDE.md. If there is already
-an approved exception that covers this conflict (e.g. "use `<Button>` from
-`@ds/mobile` wherever source uses `<Button>` from `@ds/web`"), apply it and
-continue. Do not surface it to the user again.
+Before surfacing a conflict, read the `## Sync` section of the destination
+CLAUDE.md. If an approved exception already covers this conflict, apply it
+silently and continue. Do not surface it to the user again.
 
 **Step 2 — Investigate the destination codebase**
 
-If there is no approved exception, search the destination codebase for how
-the same kind of thing is handled elsewhere:
-- Look in files adjacent to the destination file (same feature, same directory)
-- Look in other already-synced feature pairs if they exist (find CLAUDE.md
-  files with sync metadata)
-- Look for shared components or utilities in the project's design system or
-  shared packages
+If no approved exception exists, search the destination codebase for the
+established pattern for this kind of construct:
+- Files adjacent to the destination file (same feature, same directory)
+- Other already-synced feature pairs (find CLAUDE.md files with sync metadata)
+- Shared components or utilities in the project's design system or shared
+  packages
 
-The goal is to find the established destination-platform pattern for this
-kind of construct, not to invent a new one.
+The goal is to find what already exists in the destination, not to invent a
+new approach.
 
-**Step 3 — Surface the conflict to the user**
+**Step 3 — Surface the single conflict**
 
-Present what you found:
+Send one message containing exactly one conflict:
 
 > "Conflict in `<file>`:
 > - Source uses: `<what the source has, with import path>`
@@ -192,22 +340,22 @@ Present what you found:
 >
 > Should I use `<found alternative>` here, or something else?"
 
-Do not guess or proceed without confirmation. The user may correct the
-proposed alternative.
+Wait for the user's response before doing anything else — do not read ahead,
+do not port the next file, do not look for more conflicts.
 
 **Step 4 — Verify and confirm**
 
-If the user provides or corrects the alternative, verify that the proposed
-pattern exists in the codebase and would work in context. If something seems
-off (missing import, wrong API shape), raise it rather than silently using it.
-Continue iterating until the user explicitly confirms the resolution.
+Check that the user's confirmed alternative exists in the codebase and fits
+the context. If something seems wrong (missing import, wrong API shape), say
+so. Keep iterating until the user explicitly confirms.
 
 **Step 5 — Record and continue**
 
-Once confirmed, add the resolution to the destination CLAUDE.md under
-"Approved exceptions". Then apply it to the current file and
-continue porting. The same exception must be applied consistently across all
-remaining files in this sync run.
+Only after explicit confirmation: add the resolution to the destination
+CLAUDE.md under "Approved exceptions". Apply it to the current file. Then move
+to the next file. Apply the same exception automatically to any subsequent
+file that has the same conflict — do not re-ask for a conflict that is already
+approved.
 
 ### Handling new vs updated files
 

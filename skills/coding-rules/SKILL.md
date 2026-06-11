@@ -66,6 +66,7 @@ Each bullet is the terse form of a rule. The full rationale and examples for eac
 **Tooling**
 - **`date-fns`, not `moment.js`**.
 - **Never `git add` / `commit` / `push`** unless explicitly asked.
+- **Never `git stash`** (or `git stash pop` / `git stash apply`) — stashing clears the index and destroys the user's staged/unstaged split, which downstream skills (`/ticket`, `/commit`, `/self-review`) depend on. If you need a clean working tree, ask first.
 
 **General**
 - **No comments** unless the *why* is non-obvious (hidden constraint, subtle invariant, external-bug workaround). Never narrate what code does or reference the current task/ticket/caller.
@@ -246,6 +247,8 @@ Applies broadly: never silently default any value whose absence indicates a prog
 - Do: `import { format } from 'date-fns'; format(date, 'yyyy-MM-dd')`
 
 **Never commit, stage, or push on the user's behalf** — do not run `git add`, `git commit`, `git push`, or any equivalent unless explicitly asked.
+
+**Never stash** — do not run `git stash`, `git stash pop`, `git stash apply`, or any equivalent. Stashing moves every staged and unstaged change into a stash entry and resets the working tree, which destroys the user's curated staged/unstaged split. Several downstream skills in this setup (`/ticket`, `/commit`, `/self-review`) operate on exactly what's currently staged versus unstaged; once you stash and pop, that boundary is gone and the user has to rebuild it by hand. If you need a clean working tree to run a test, reproduce a bug, or check out another branch, stop and ask the user first — they may want to commit a WIP, choose what to keep, or accept the stash explicitly.
 
 ---
 

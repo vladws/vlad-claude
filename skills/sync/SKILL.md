@@ -122,8 +122,15 @@ This directory is a verbatim 1-to-1 port of the source. Component names, file
 and folder names, directory hierarchy, logic, utility functions, variable
 names, and code comments all match the source exactly.
 
-**Approved exceptions (confirmed by user during sync runs):**
-<list each exception as: "source uses X → destination uses Y (file reference where pattern was found)"; or "None" if none yet>
+Generic mobile→web translations (design-system primitives, navigation APIs,
+platform shims, and any mapping that applies across every synced feature)
+are NOT recorded here. They live in the `mobile-to-web-mappings` skill in
+the `design-system` plugin and are applied automatically by `/sync`. Only
+record exceptions in the section below if they are **specific to this
+feature** — a deviation that does not apply to other synced features.
+
+**Feature-specific overrides (confirmed by user during sync runs):**
+<list each override as: "source uses X → destination uses Y (file reference where pattern was found, brief reason it's specific to this feature)"; or "None" if none yet>
 
 **Explicit exclusions (user-confirmed):**
 <list each user-confirmed exclusion, or "None" if none>
@@ -312,16 +319,35 @@ list of conflicts across files and present them together. Each conflict gets
 its own isolated exchange with the user — one conflict per message, one
 message per conflict.
 
-**Step 1 — Check approved exceptions**
+**Step 1 — Check the generic mobile-to-web mappings**
 
-Before surfacing a conflict, read the `## Sync` section of the destination
-CLAUDE.md. If an approved exception already covers this conflict, apply it
-silently and continue. Do not surface it to the user again.
+Before anything else, consult the `mobile-to-web-mappings` skill in the
+`design-system` plugin. That skill is the authoritative source for generic
+mobile→web translations that apply across every synced feature: design-system
+primitives (e.g. mobile `<Button>` → web `<Button>`, `<Touchable>` →
+`<Pressable>`), navigation APIs, platform shims, image/asset handling, and
+similar universal mappings.
 
-**Step 2 — Investigate the destination codebase**
+If the mapping exists there, apply it silently and continue. Do not surface
+it to the user, and do not record it in the feature CLAUDE.md — generic
+mappings are not feature-specific overrides, and duplicating them in every
+feature's CLAUDE.md would create drift the moment the design system changes.
 
-If no approved exception exists, search the destination codebase for the
-established pattern for this kind of construct:
+If the `mobile-to-web-mappings` skill is not available in this environment,
+proceed as if no generic mapping was found, but mention this in the sync
+report so the user knows generic mappings could not be auto-applied.
+
+**Step 2 — Check feature-specific overrides**
+
+Read the `## Sync` section of the destination CLAUDE.md. If an entry under
+"Feature-specific overrides" already covers this conflict, apply it silently
+and continue. Do not surface it to the user again.
+
+**Step 3 — Investigate the destination codebase**
+
+If neither generic mappings nor feature-specific overrides resolve the
+conflict, search the destination codebase for the established pattern for
+this kind of construct:
 - Files adjacent to the destination file (same feature, same directory)
 - Other already-synced feature pairs (find CLAUDE.md files with sync metadata)
 - Shared components or utilities in the project's design system or shared
@@ -330,7 +356,7 @@ established pattern for this kind of construct:
 The goal is to find what already exists in the destination, not to invent a
 new approach.
 
-**Step 3 — Surface the single conflict**
+**Step 4 — Surface the single conflict**
 
 Send one message containing exactly one conflict:
 
@@ -343,19 +369,36 @@ Send one message containing exactly one conflict:
 Wait for the user's response before doing anything else — do not read ahead,
 do not port the next file, do not look for more conflicts.
 
-**Step 4 — Verify and confirm**
+**Step 5 — Verify and confirm**
 
 Check that the user's confirmed alternative exists in the codebase and fits
 the context. If something seems wrong (missing import, wrong API shape), say
 so. Keep iterating until the user explicitly confirms.
 
-**Step 5 — Record and continue**
+**Step 6 — Classify the resolution, then record and continue**
 
-Only after explicit confirmation: add the resolution to the destination
-CLAUDE.md under "Approved exceptions". Apply it to the current file. Then move
-to the next file. Apply the same exception automatically to any subsequent
-file that has the same conflict — do not re-ask for a conflict that is already
-approved.
+After explicit confirmation, decide where the resolution belongs:
+
+- **Generic mapping** (would apply to any feature being synced — e.g. a
+  design-system component swap, a navigation API substitution, a platform
+  shim): do NOT add it to the feature CLAUDE.md. Surface this to the user:
+  > "This looks like a generic mobile→web mapping, not specific to this
+  > feature. I'd recommend adding it to the `mobile-to-web-mappings` skill
+  > in the `design-system` plugin so every future sync picks it up
+  > automatically. Want me to flag this for that skill in the sync report?"
+  Apply the resolution to the current file and any other files in this run
+  that hit the same conflict, and include it in the sync report under
+  "Generic mappings to promote".
+
+- **Feature-specific override** (only makes sense for this feature — e.g. a
+  copy difference, a business-rule deviation, a one-off integration the
+  feature needs on web but not on mobile): add it to the destination
+  CLAUDE.md under "Feature-specific overrides" with a brief note on why
+  it's specific to this feature. Apply it to the current file and any
+  subsequent file in this run that has the same conflict — do not re-ask.
+
+When in doubt about the classification, ask the user one short question
+rather than guessing.
 
 ### Handling new vs updated files
 
@@ -384,11 +427,18 @@ After completing, print a structured report:
 **Files in destination not found in source — review manually:**
   - <list, or "None">
 
-**Exceptions applied (from approved list):**
+**Generic mappings applied (from `mobile-to-web-mappings` skill):**
+  - <source pattern> → <destination pattern>: applied to <n> files
+  - <note "skill unavailable in this environment" if it couldn't be consulted>
+
+**Feature-specific overrides applied (from destination CLAUDE.md):**
   - <source pattern> → <destination pattern>: applied to <n> files
 
-**New conflicts resolved this run:**
-  - <source pattern> → <destination pattern>: confirmed by user, added to approved exceptions
+**New feature-specific overrides recorded this run:**
+  - <source pattern> → <destination pattern>: confirmed by user, added to feature CLAUDE.md (reason: <why this is feature-specific>)
+
+**Generic mappings to promote (suggest adding to `mobile-to-web-mappings` skill):**
+  - <source pattern> → <destination pattern>: confirmed by user this run, not yet in the design-system skill
 ```
 
 

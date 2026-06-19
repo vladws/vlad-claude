@@ -12,68 +12,511 @@ description: >
   operations.
 ---
 
-Port a mobile feature flow to web, maintaining a verbatim 1-to-1 sync. The
-direction is always **mobile → web**. The mobile directory is the source of
-truth; the web directory is the destination.
+Port a mobile **modal flow** to web as a verbatim 1-to-1 sync. The web
+destination is a **multi-step modal flow** with the same shape. Direction is
+always **mobile → web**: mobile is the source of truth, web is the destination.
 
-Runs in four phases: identify flows, set up documentation, assess scope, then
-perform the sync.
+The skill branches on whether a sync relationship already exists:
+
+- **First run** (no `## Sync` in destination CLAUDE.md): establish the
+  contract, agree on scope, port.
+- **Re-run** (sync section exists): detect scope drift, then content drift,
+  reconcile both.
+
+Shared mechanics (orchestrator vs screens, verbatim porting, data flow
+invariant, platform conflicts, sync report) are defined once in "Sync
+mechanics" at the bottom and referenced by both paths.
+
+---
+
+## Domain model
+
+Both source and destination are **modal flows**: a wrapping modal that
+progresses the user through a sequence of pages. The two sides share the
+same shape, with different names for the unit of progression:
+
+- **Orchestrator layer** — modal shell, providers, navigator (mobile) or
+  stepper (web), shared hooks, utilities, state, types. Holds the flow
+  together; routes nothing on its own without screens to plug into. Always
+  synced verbatim because partial orchestrator sync produces a broken flow.
+- **Screens** (mobile) ↔ **modal steps** (web) — the discrete pages the user
+  moves through. Opt-in for sync; each is a unit the user can include or
+  exclude.
+- **Sub-flows** — a nested modal flow rendered from inside a screen. On
+  mobile they appear either inline within the parent modal or as a separate
+  modal stack. On web they mount as steps inside the parent stepper. A
+  sub-flow's screens form a tree rooted under the parent screen: when the
+  parent screen is in scope, the sub-flow's screens come with it (treat
+  them as part of the parent's sub-tree), unless explicitly excluded.
+
+Throughout this skill, **"screen" means a unit of the flow on either side**
+— mobile "screen" and web "modal step" name the same concept. Use whichever
+term the surrounding code uses; the sync treats them identically.
 
 ---
 
 ## Phase 1 — Identify source and destination
 
-### If the user provided explicit folder paths
+**Explicit paths from the user:** confirm before proceeding.
 
-Accept them. Then confirm before proceeding:
+> "Syncing from `<source>` → `<destination>`. Correct?"
 
-> "Syncing from `<source>` → `<destination>`. Is that correct?"
+**Vague request (e.g. "sync the e-transfer flow"):** search common locations
+(`src/features/`, `src/flows/`, `src/screens/`, `src/pages/`, `apps/`,
+`packages/`) plus any directory containing a `CLAUDE.md` with sync metadata.
+Present candidates with full paths and wait for confirmation.
 
-Do not proceed until the user confirms.
-
-### If the user was vague (e.g. "sync the e-transfer flow")
-
-Search the codebase for folders that plausibly match the described feature.
-Look in common locations: `src/features/`, `src/flows/`, `src/screens/`,
-`src/pages/`, `apps/`, `packages/` — and any location where similar synced
-pairs already exist (check for `CLAUDE.md` files with sync metadata). Present
-the candidates with their full paths:
-
-> "I found these candidates:
->  - Source (mobile): `src/features/e-transfer/mobile/`
->  - Destination (web): `src/features/e-transfer/web/`
->
-> Is this correct, or should I use different paths?"
-
-Do not proceed until the user confirms the exact source and destination paths.
-Never assume — a wrong sync target can corrupt a platform's codebase.
+A wrong sync target can corrupt a platform's codebase — never assume.
 
 ---
 
-## Phase 2 — Set up CLAUDE.md documentation
+## Phase 2 — Detect run mode
 
-CLAUDE.md files are the long-lived contracts that guide agents maintaining this
-sync. They must exist in both source and destination directories, and must be
-kept accurate on every run.
+Read `<destination>/CLAUDE.md`. If a `## Sync` section exists, this is a
+**re-run** (go to Phase 3B). Otherwise, **first run** (Phase 3A). Derive
+mechanically; don't ask the user.
 
-### Check existing CLAUDE.md files
+If the section exists but is missing required fields (in-scope screens,
+orchestrator description), treat as first run and tell the user:
 
-1. Check if `<source>/CLAUDE.md` and `<destination>/CLAUDE.md` exist.
-2. If either exists, read it. Look for a `## Sync` section.
-3. If a sync section already exists, verify the paths and exceptions are still
-   accurate. Update anything that has changed. Confirm any changes with the
-   user before writing.
-4. If no sync section exists (or the file is new), create one using the
-   templates below.
+> "Found `## Sync` in `<destination>/CLAUDE.md` but required fields are
+> missing. Treating this as a first run and rebuilding the contract."
 
-### Record explicit exclusions from the invocation
+---
 
-If the user mentioned any exclusions when invoking the skill (e.g. "exclude
-the interac section"), record those in the CLAUDE.md templates below. Do not
-ask for additional exclusions upfront — platform conflicts are discovered and
-resolved during Phase 3.
+## Phase 3A — First run: establish contract and scope
 
-### CLAUDE.md template — source directory
+### Step 1 — Compute the orchestrator layer
+
+The **orchestrator layer** is defined in "Domain model" above. To compute it
+for this feature:
+
+1. Read `<source>/src/index.ts` (or `<source>/index.ts`). This is the entry
+   point.
+2. Collect every transitively imported file — the full sync scope (see "Sync
+   scope computation" below).
+3. Within that set, identify **screen files**: top-level components
+   registered in the modal flow's navigator/stepper, exported as route
+   entry points, or living under `screens/`. Components belonging to a
+   sub-flow nested inside a screen are part of that screen's sub-tree —
+   they are not separate top-level screens.
+4. Orchestrator = sync scope − screen files − each screen's sub-tree
+   (which includes any sub-flow's screens rendered from within it).
+
+### Step 2 — List candidate screens
+
+```
+- ConfirmationScreen     screens/confirmation-screen.tsx
+- ReviewScreen           screens/review-screen.tsx
+- SummaryScreen          screens/summary-screen.tsx
+```
+
+### Step 3 — Confirm scope with the user
+
+> "Setting up the sync contract for the `<feature>` modal flow:
+>
+> **Orchestrator (always synced):** modal shell, providers, navigator/
+> stepper, shared hooks, state, types — `src/index.ts`, `src/providers/`,
+> `src/hooks/`, `src/state/`, `src/types/`, `src/utils/`, navigator files
+>
+> **Screens / modal steps (opt-in):**
+>  - `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
+>  - `ReviewScreen` (`screens/review-screen.tsx`)
+>  - `SummaryScreen` (`screens/summary-screen.tsx`) — contains the
+>    `IdentityVerification` sub-flow (its screens mount as steps under
+>    this one)
+>
+> Which screens should I port now? (all / none / list) Unselected ones get
+> recorded as exclusions."
+
+Sub-components and sub-flow screens of an excluded screen are also excluded
+— they move with their parent. Wait for confirmation.
+
+### Step 4 — Write CLAUDE.md files
+
+Use the templates under "CLAUDE.md templates". Fill in orchestrator
+description, in-scope screens, and exclusions.
+
+### Step 5 — Sync
+
+Walk orchestrator + in-scope screens through "Sync mechanics", then emit the
+sync report.
+
+---
+
+## Phase 3B — Re-run: drift detection and reconciliation
+
+### Step 1 — Migrate CLAUDE.md format if needed
+
+The destination `CLAUDE.md` `## Sync` section may have been written by an
+older version of this skill, with a different structure (for example: flat
+"Explicit exclusions" and "Feature-specific overrides" lists at the top
+level, no `### Exceptions` heading, no per-screen `#### Screen: <Name>`
+groups, no "Screens in source excluded from sync" / "Screens in destination
+not present in source" sections). Before reading scope or exceptions,
+compare the existing structure to the template in "CLAUDE.md templates"
+below. The current template requires:
+
+- `### Orchestrator layer (always synced verbatim)` heading
+- `### In-scope screens` heading
+- `### Exceptions` heading with these subsections:
+  - `#### Orchestrator layer`
+  - One `#### Screen: <Name>` per in-scope screen
+  - `#### Screens in source excluded from sync`
+  - `#### Screens in destination not present in source`
+
+If any required heading is missing, the format is outdated. Migrate it
+following these rules:
+
+1. **Preserve every entry.** No exception, override, exclusion, or screen
+   reference may be dropped during migration. Re-shuffle into the new
+   structure — never delete.
+2. **Re-slot by where each entry applies:**
+   - Old flat "Explicit exclusions" entries naming screens → "Screens in
+     source excluded from sync".
+   - Old flat "Platform-specific files owned by this directory" entries
+     naming whole destination-only screens → "Screens in destination not
+     present in source". File-level entries (not whole screens) → the
+     "Platform-specific files owned by destination" entry of the owning
+     group (orchestrator if the file sits outside any screen tree,
+     otherwise the matching `#### Screen:` group).
+   - Old flat "Feature-specific overrides" → decide owning group from the
+     file reference each entry cites. Move accordingly. Overrides applying
+     across multiple screens go once under the orchestrator group rather
+     than duplicated per screen. If ownership is ambiguous (no file
+     reference, or the entry applies broadly), keep it under the
+     orchestrator group and flag it in the migration summary.
+3. **Add any missing required headings** using the current template,
+   including the explanatory text under `### Exceptions`.
+4. **Apply the same check to the source `CLAUDE.md`.** Its `## Sync` section
+   is shorter — confirm the "Rules for agents working here" block matches
+   the current template and the cross-reference to the destination path
+   is accurate.
+
+After migration, surface a brief summary before proceeding:
+
+> "Migrated `<destination>/CLAUDE.md` from an older sync format. No entries
+> dropped. Moved <n> exclusions, <n> overrides, <n> platform-specific
+> entries. Ambiguous entries kept under orchestrator group: <list>. Review
+> and refine if needed."
+
+Omit the ambiguous-entries line if none surfaced. If the format already
+matches the current template, skip this step silently.
+
+Only after migration (or a clean skip) proceed to Step 2.
+
+### Step 2 — Detect scope drift
+
+From destination CLAUDE.md `## Sync`, extract:
+- Recorded orchestrator description
+- **In-scope screens** (each `#### Screen: <Name>` subsection counts)
+- **Screens in source excluded from sync**
+- **Screens in destination not present in source**
+
+Recompute screens in source (Phase 3A Step 2 rule) and list current
+destination screen files. Classify each:
+
+| Bucket | Definition | Action |
+|---|---|---|
+| **In sync** | In source + destination, recorded as in-scope | Content-drift check (Step 4) |
+| **New in source** | In source, not in destination, not in "Screens in source excluded from sync" | Ask user (Step 3) |
+| **Orphan in destination** | In destination, not in source, not in "Screens in destination not present in source" | Ask user (Step 3) |
+| **Already excluded** | Listed in either exclusion section | Leave alone |
+
+If every screen is "In sync" or "Already excluded", skip Step 3.
+
+### Step 3 — Reconcile scope drift
+
+Present all drift items in one message so the user sees the full picture,
+then record decisions individually.
+
+> "Scope drift detected:
+>
+> **New in source:** `WelcomeScreen` (`screens/welcome-screen.tsx`)
+> **Orphan in destination:** `WebOnlyHelpScreen` (`screens/web-only-help-screen.tsx`)
+>
+> For each:
+>  - `WelcomeScreen`: port now / exclude from sync / skip this run
+>  - `WebOnlyHelpScreen`: delete / preserve as destination-only / skip this run"
+
+Persist each resolution to CLAUDE.md immediately:
+
+- **Port now** → add to "In-scope screens" + create empty `#### Screen: <Name>`
+  subsection under "Exceptions".
+- **Exclude from sync** → add to "Screens in source excluded from sync" with
+  reason (or `(no reason given)`).
+- **Preserve as destination-only** → add to "Screens in destination not
+  present in source" with reason.
+- **Skip this run** → no CLAUDE.md change; drift surfaces again next run.
+- **Delete** (orphan only) → confirm explicitly first, since this is
+  destructive:
+  > "Delete `<file>` from destination? Removes the file and any sub-components
+  > only it imports. Confirm?"
+
+Wait until every drift item has a recorded decision before moving on.
+
+### Step 4 — Detect and resolve content drift
+
+Walk orchestrator + all currently in-scope screens (including anything added
+in Step 3). For each file:
+1. Compute what the destination *should* contain by porting source through
+   "Sync mechanics" with recorded mappings and overrides applied silently.
+2. Compare against current destination content.
+3. If they match: in sync. If they differ: overwrite destination with the
+   ported source.
+
+For divergences not covered by any recorded rule, fall back to the
+platform-conflict process in "Sync mechanics" (one conflict, one file, one
+user response, continue).
+
+The destination is never a source of truth. Any unrecorded drift is treated
+as accidental and overwritten. To keep destination-only behavior, the user
+must record it under "Feature-specific overrides" or under one of the
+"Platform-specific files" lists.
+
+### Step 5 — Emit sync report
+
+Standard format (see "Sync mechanics") with a drift-resolution header:
+
+```
+## Scope drift resolved this run
+- <screen>: <decision> (recorded as <where>)
+```
+
+---
+
+## Sync mechanics
+
+### The data flow invariant (highest priority)
+
+The sequence of data flow — what queries run, in what order, under what
+conditions, and when their cache gets invalidated — **is** the feature. Two
+platforms that render identical pixels but fetch or invalidate differently
+will diverge the moment a backend response is slow, a user backgrounds the
+app, or a mutation lands. Preserve this sequence before anything else.
+
+When porting any file that touches data:
+
+- **Conditional queries.** If the source fires a query inside a conditional
+  branch — `{condition && <ComponentThatQueries />}`, a hook called from a
+  child that only mounts when a flag is true, a query guarded by a
+  `skip`/`enabled` argument tied to upstream state — the destination must
+  preserve the same conditional structure. Do not hoist the query to a
+  common parent and pass data down. Do not turn a gated query into an
+  always-on one. Do not flatten the condition by rendering the component
+  unconditionally and "handling it later". The query must fire under the
+  same conditions, in the same place, at the same point in the render tree.
+
+- **Cache invalidation.** If the source invalidates a cache key at a
+  specific point — after a particular mutation, on unmount of a particular
+  screen, inside a particular conditional branch, after a specific user
+  action — the destination must invalidate the same key at the same point.
+  Do not relocate invalidations to a "more convenient" hook. Do not
+  consolidate multiple invalidations into one. Do not omit them because the
+  destination platform "would refetch anyway".
+
+- **Order of operations.** Queries, mutations, and effects that run in a
+  particular order in the source must run in the same order in the
+  destination. Hooks that depend on each other's results must remain in the
+  same relative position. If the source reads value A, then conditionally
+  fires query B based on A, then invalidates key C after B resolves, the
+  destination must do the same three things in the same order.
+
+Before writing any destination file, list every query, the condition guarding
+it, and every invalidation it triggers. Carry that list across unchanged. If
+something cannot be carried verbatim, treat it as a platform conflict — do
+not silently restructure.
+
+### What "verbatim" means
+
+Beyond the data flow invariant, preserve exactly:
+- File and folder names
+- Component hierarchy and nesting
+- Hook call order, effect sequencing, render structure
+- Cross-file logic boundaries — don't collapse two files into one or split
+  one into two without explicit user confirmation
+
+Adapted (not verbatim): UI primitive components, navigation APIs,
+platform-specific SDKs. Everything else ports as-is.
+
+### Sync scope computation
+
+The sync covers only the feature's transitively imported files — not the
+whole source directory.
+
+1. Read `<source>/src/index.ts` (or `<source>/index.ts`). This is the entry
+   point.
+2. Collect every file transitively imported by its exports.
+3. Exclude regardless of imports:
+   - Ambient declarations (`*.d.ts`)
+   - The entry point itself (shape differs per platform)
+   - Test setup, config, and build files (`jest.config.*`, `tsconfig.*`,
+     `project.json`, `*.settings.json`, `test-setup.*`)
+
+Orchestrator + in-scope screens (and their sub-trees) is a subset of this.
+
+### File-level mapping
+
+For each file in the active scope (orchestrator + in-scope screens):
+1. Map source path → destination path by swapping roots, preserving
+   intermediate directories.
+2. If the file matches a recorded exclusion, skip and note in the report.
+3. If the implementation is platform-specific (e.g. a React Navigation
+   navigator, a native wallet integration), don't skip — surface as a
+   platform conflict, then create a destination-platform version that fills
+   the same structural role.
+4. Otherwise: write the ported content, creating directories as needed.
+
+### Resolving platform conflicts
+
+Port verbatim. When you hit something that cannot be carried over as-is — a
+component, import, API, or pattern absent on the destination platform — work
+through the steps below.
+
+**The process is strictly sequential: one file → one conflict → one user
+response → continue.** No lookahead, no accumulation, no batching. Each
+conflict is its own message exchange.
+
+1. Pick the next file.
+2. Attempt to port verbatim.
+3. On the first conflict in that file, stop. Do not scan ahead.
+4. Resolve with the user (steps below).
+5. Finish the current file.
+6. Next file.
+
+**Step 1 — Check generic mobile-to-web mappings**
+
+Consult the `mobile-to-web-mappings` skill in the `design-system` plugin.
+It owns generic mobile→web translations that apply across every synced
+feature: design-system primitives (mobile `<Button>` → web `<Button>`,
+`<Touchable>` → `<Pressable>`), navigation APIs, platform shims, image
+handling. If it matches, apply silently — do not record in the feature
+CLAUDE.md (duplicating generic mappings creates drift the moment the design
+system changes).
+
+If the skill is unavailable, proceed as if no mapping was found and note it
+in the sync report.
+
+**Step 2 — Check feature-specific overrides**
+
+Identify which exception group owns the file: orchestrator layer, or the
+specific screen whose tree contains it. Check that group's
+"Feature-specific overrides" first, then fall back to the orchestrator
+group (screens inherit orchestrator-level overrides). If matched, apply
+silently.
+
+**Step 3 — Investigate the destination codebase**
+
+If nothing matches, search for the established pattern in:
+- Files adjacent to the destination file
+- Other synced feature pairs (`CLAUDE.md` files with sync metadata)
+- Shared design-system / utility packages
+
+Find what already exists; don't invent.
+
+**Step 4 — Surface the single conflict**
+
+One message, one conflict:
+
+> "Conflict in `<file>`:
+> - Source uses: `<source pattern with import path>`
+> - Found in destination: `<alternative with file reference>`
+>
+> Use `<alternative>`, or something else?"
+
+Wait. Do not read ahead, port the next file, or look for further conflicts.
+
+**Step 5 — Verify and confirm**
+
+Check the user's choice exists and fits (imports resolve, API shape matches).
+Push back if something looks wrong. Iterate until explicit confirmation.
+
+**Step 6 — Classify and record**
+
+After confirmation:
+
+- **Generic mapping** (applies across features — design-system swap,
+  navigation substitution, platform shim): don't add to feature CLAUDE.md.
+  Tell the user:
+  > "Looks generic, not feature-specific. Recommend adding to
+  > `mobile-to-web-mappings`. Flag it in the sync report?"
+
+  Apply to the current file plus any other file in this run with the same
+  conflict; list under "Generic mappings to promote" in the report.
+
+- **Feature-specific override** (only meaningful for this feature — copy
+  difference, business-rule deviation, one-off integration): record under
+  the **owning group's** "Feature-specific overrides" — orchestrator group
+  if the file is outside any screen, otherwise the `#### Screen: <Name>`
+  group. If the same override would apply across multiple screens, record
+  it once at the orchestrator level instead of duplicating. Include a brief
+  reason. Apply to subsequent matching files this run; don't re-ask.
+
+When unsure, ask the user one short classification question.
+
+### Handling new vs updated files
+
+- **In source + in destination:** overwrite with ported source (respecting
+  exclusions and overrides).
+- **In source, missing in destination:** create.
+- **In destination, missing in source:** never delete automatically. First
+  run: list under "Files in destination not found in source — review
+  manually". Re-run: handled by Phase 3B Step 2 (scope drift detection).
+
+### Sync report
+
+```
+## Sync report: <source> → <destination>
+
+**Run mode:** <first run | re-run>
+
+**CLAUDE.md format migration:** (re-run only, omit if format was current)
+  - Migrated `<destination>/CLAUDE.md` to the latest sync format. Moved
+    <n> exclusions, <n> overrides, <n> platform-specific entries. No
+    entries dropped. Ambiguous entries kept under orchestrator group:
+    <list, or "None">.
+
+**Scope drift resolved this run:** (re-run only)
+  - <screen>: <decision> (recorded as <where>)
+
+**Files synced:** <count>
+**Files skipped (excluded):** <count>
+  - <file>: <reason>
+
+**Files created (new in destination):** <count>
+  - <list>
+
+**Files in destination not found in source — review manually:**
+  - <list, or "None">
+
+**Generic mappings applied (from `mobile-to-web-mappings` skill):**
+  - <source pattern> → <destination pattern>: applied to <n> files
+  - (note "skill unavailable in this environment" if it couldn't be consulted)
+
+**Feature-specific overrides applied (from destination CLAUDE.md):**
+  - <source pattern> → <destination pattern>: applied to <n> files
+
+**New feature-specific overrides recorded this run:**
+  - <source pattern> → <destination pattern>: added to feature CLAUDE.md
+    (reason: <why feature-specific>)
+
+**Generic mappings to promote (suggest adding to `mobile-to-web-mappings`):**
+  - <source pattern> → <destination pattern>: confirmed this run, not yet
+    in the design-system skill
+```
+
+---
+
+## CLAUDE.md templates
+
+These templates are the long-lived contract between source and destination.
+Phase 3A writes them fresh. Phase 3B reads them, updates the in-scope screens
+and exclusion lists as drift is resolved, and otherwise preserves them.
+
+If a CLAUDE.md already has unrelated content, preserve it and only
+append/replace the `## Sync` section.
+
+### Source directory template
 
 ```markdown
 ## Sync
@@ -82,8 +525,8 @@ This directory is the **source of truth** for the `<feature name>` flow.
 
 **Synced to:** `<relative path to destination>`
 
-For approved exceptions and exclusions, see the destination CLAUDE.md at
-`<relative path to destination>/CLAUDE.md`.
+For approved exceptions, exclusions, and the in-scope screens list, see the
+destination CLAUDE.md at `<relative path to destination>/CLAUDE.md`.
 
 ### Rules for agents working here
 - After modifying any logic (components, hooks, utilities, types) in this
@@ -94,7 +537,7 @@ For approved exceptions and exclusions, see the destination CLAUDE.md at
   maintained verbatim. Exceptions are listed in the destination CLAUDE.md.
 ```
 
-### CLAUDE.md template — destination directory
+### Destination directory template
 
 ```markdown
 ## Sync
@@ -129,316 +572,56 @@ the `design-system` plugin and are applied automatically by `/sync`. Only
 record exceptions in the section below if they are **specific to this
 feature** — a deviation that does not apply to other synced features.
 
+### Orchestrator layer (always synced verbatim)
+<describe the orchestrator file set in a few lines — modal shell, providers,
+navigator (mobile) / stepper (web), shared hooks, state, types. E.g.: "entry
+point, modal shell at src/modal/, providers under src/providers/, shared
+hooks under src/hooks/, navigator at src/navigation/, types under src/types/".
+This is the set of files /sync re-syncs unconditionally on every run; the
+user does not opt into it screen-by-screen.>
+
+### In-scope screens (modal steps on web)
+<list each screen currently part of the sync. Sub-flow screens are part of
+their parent screen's sub-tree and are not listed separately unless the user
+has explicitly excluded sibling screens within the same sub-flow. E.g.:>
+- `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
+- `ReviewScreen` (`screens/review-screen.tsx`)
+- `SummaryScreen` (`screens/summary-screen.tsx`) — contains the
+  `IdentityVerification` sub-flow
+
+### Exceptions
+
+Exceptions are grouped by **where they apply**. When porting a file, `/sync`
+locates the group that owns it (orchestrator layer or a specific screen) and
+applies entries from that group only. A file is owned by a screen if it lives
+under the screen's sub-tree or is imported exclusively by that screen;
+everything else (entry point, providers, navigators, shared hooks, utilities,
+state, types, and any component reachable from more than one screen) belongs
+to the orchestrator layer.
+
+#### Orchestrator layer
+
 **Feature-specific overrides (confirmed by user during sync runs):**
 <list each override as: "source uses X → destination uses Y (file reference where pattern was found, brief reason it's specific to this feature)"; or "None" if none yet>
 
-**Explicit exclusions (user-confirmed):**
-<list each user-confirmed exclusion, or "None" if none>
+**Platform-specific files owned by destination (not synced):**
+<list orchestrator-layer files that exist only on the destination platform — e.g. platform navigation wrappers, wallet integrations; or "None">
 
-**Platform-specific files owned by this directory (not synced):**
-<list any files that exist only in this platform and are never overwritten
-by sync — e.g. platform navigation wrappers, wallet integrations>
+#### Screen: `<ScreenName>` (`<path>`)
+
+**Feature-specific overrides:**
+<list, or "None">
+
+**Platform-specific files owned by destination (not synced):**
+<list sub-components or helpers under this screen's tree that exist only on the destination platform, or "None">
+
+<repeat one section per in-scope screen>
+
+#### Screens in source excluded from sync
+
+<list each excluded source screen as: "`<ScreenName>` (`<source path>`) — <reason>"; or "None">
+
+#### Screens in destination not present in source
+
+<list each destination-only screen as: "`<ScreenName>` (`<destination path>`) — <reason it is preserved>"; or "None">
 ```
-
-Write the filled-in versions of these templates to the respective CLAUDE.md
-files. If a CLAUDE.md already has other content (not sync-related), preserve it
-and append or replace only the `## Sync` section.
-
----
-
-## Phase 3 — Assess scope
-
-Before porting any files, identify which screens need to be included in this
-sync run. All logic within the agreed scope is ported verbatim — this phase
-only determines which screens are in scope.
-
-### Identify screens in the source
-
-Scan the mobile source directory for screen-level components. A screen is a
-top-level component registered in a navigator or exported as an entry point
-for a route. Look at:
-- Navigator files (they enumerate registered screens explicitly)
-- Top-level component files that are imported by navigators
-- A `screens/` subdirectory if one exists
-
-Build a flat list: screen name → source file path.
-
-### Filter against existing exclusions
-
-Read the destination CLAUDE.md. Remove from the list any screens already
-recorded under "Explicit exclusions (user-confirmed)". These have been
-previously decided and do not need to be re-asked.
-
-### Check which screens are new
-
-For each remaining screen, check whether a corresponding file already exists
-in the destination directory (same relative path). Split the list into:
-- **Already ported**: file exists in destination
-- **New**: file does not exist in destination
-
-Do not present already-ported screens to the user — they are in scope by
-default (the sync will update them).
-
-### Confirm new screens with the user
-
-Present the new screens and ask which to include:
-
-> "The following screens exist in mobile but have no web equivalent yet:
->
-> - `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
-> - `ReviewScreen` (`screens/review-screen.tsx`)
-> - `SummaryScreen` (`screens/summary-screen.tsx`)
->
-> Which of these should I port in this run? (Answer with all, none, or a
-> list)"
-
-For any screen the user excludes, add it to "Explicit exclusions
-(user-confirmed)" in the destination CLAUDE.md before proceeding. The
-sub-components of an excluded screen are also excluded — do not port them.
-
-Do not proceed to Phase 4 until the user has confirmed scope.
-
----
-
-## Phase 4 — Perform the sync
-
-Walk the source directory and produce a verbatim port in the destination.
-
-### The data flow invariant (highest priority)
-
-The sequence of data flow — what queries run, in what order, behind what
-conditions, and when their cache gets invalidated — **is** the feature. Two
-platforms that render identical pixels but fetch or invalidate data
-differently are not in sync; they will diverge in behavior the moment a
-backend response is slow, a user backgrounds the app, or a mutation lands.
-Preserve this sequence before anything else.
-
-Concretely, when porting any file that touches data:
-
-- **Conditional queries.** If the source fires a query inside a conditional
-  branch — `{condition && <ComponentThatQueries />}`, a hook called from a
-  child that only mounts when a flag is true, a query guarded by a
-  `skip`/`enabled` argument tied to upstream state — the destination must
-  preserve the same conditional structure. Do not hoist the query to a
-  common parent and pass data down. Do not turn a gated query into an
-  always-on one. Do not flatten the condition by rendering the component
-  unconditionally and "handling it later". The query must fire under the
-  same conditions, in the same place, at the same point in the render tree.
-
-- **Cache invalidation.** If the source invalidates a cache key at a
-  specific point — after a particular mutation, on unmount of a particular
-  screen, inside a particular conditional branch, after a specific user
-  action — the destination must invalidate the same key at the same point.
-  Do not relocate invalidations to a "more convenient" hook. Do not
-  consolidate multiple invalidations into one. Do not omit them because the
-  destination platform "would refetch anyway".
-
-- **Order of operations.** Queries, mutations, and effects that run in a
-  particular order in the source must run in the same order in the
-  destination. Hooks that depend on each other's results must remain in the
-  same relative position. If the source reads value A, then conditionally
-  fires query B based on A, then invalidates key C after B resolves, the
-  destination must do the same three things in the same order.
-
-Before writing any destination file, trace its data flow: list every query,
-the condition guarding it, and every invalidation point it triggers. Carry
-that list to the destination unchanged. If any item cannot be carried over
-verbatim (because the destination platform lacks the equivalent API), treat
-it as a platform conflict and follow the "Resolving platform conflicts"
-steps below — do not silently restructure.
-
-### What "verbatim" means
-
-Beyond the data flow invariant above, the following must also be preserved
-exactly:
-- File and folder names
-- Component hierarchy and nesting
-- The order of operations within a component (hooks called in the same order,
-  effects running in the same sequence, renders structured the same way)
-- Logic that spans multiple files must remain in the same relative positions
-  across those files — do not collapse two source files into one or split one
-  into two without explicit user confirmation
-
-The following are adapted for the destination platform (not preserved
-verbatim): UI primitive components, navigation APIs, platform-specific SDKs.
-Everything else is ported as-is.
-
-### Determine the sync scope
-
-Do not walk the entire source directory. The sync covers only the feature's
-source files — the transitive closure of what the source's `index.ts` imports.
-
-1. Read `<source>/src/index.ts` (or `<source>/index.ts` if no `src/`
-   subdirectory exists). This is the entry point.
-2. Collect every file imported — directly or transitively — by the exports in
-   that entry point. This set is the sync scope.
-3. Exclude from scope regardless of imports:
-   - Ambient type declaration files (`*.d.ts`)
-   - The entry point file itself (`index.ts`) — its shape differs per platform
-   - Test setup, config, and build files (`jest.config.*`, `tsconfig.*`,
-     `project.json`, `*.settings.json`, `test-setup.*`)
-
-Only files in this computed scope are candidates for syncing.
-
-### File-level mapping
-
-For every file in the sync scope:
-1. Compute the corresponding destination path by replacing the source root with
-   the destination root (preserving all intermediate directories).
-2. If the file matches an explicit user-confirmed exclusion from the destination
-   CLAUDE.md, skip it and note it in the sync report.
-3. If the file's implementation is platform-specific (e.g. a React Navigation
-   navigator, a native wallet integration), it is NOT skipped — it still exists
-   in the destination as a structural equivalent. Surface the conflict to the
-   user following the "Resolving platform conflicts" steps below, then create
-   the destination-platform version that preserves the same structural role.
-4. If no conflict: write the ported content to the destination path. Create
-   intermediate directories as needed.
-
-### Resolving platform conflicts
-
-Port each file verbatim. When you encounter something that cannot be carried
-over as-is — a component, import, API, or pattern that does not exist on the
-destination platform — work through this sequence.
-
-The required process is strictly sequential: **one file → one conflict → one
-user response → continue**. There is no lookahead, no accumulation, no
-batching.
-
-Concretely:
-1. Pick the next file to port.
-2. Read it and attempt to port it verbatim.
-3. If you hit a conflict **in that file**, stop immediately — do not read any
-   other files to find more conflicts first.
-4. Resolve that single conflict with the user (see steps below).
-5. Finish porting the current file.
-6. Move to the next file and repeat from step 2.
-
-Do not "find all the platform conflicts" before starting. Do not accumulate a
-list of conflicts across files and present them together. Each conflict gets
-its own isolated exchange with the user — one conflict per message, one
-message per conflict.
-
-**Step 1 — Check the generic mobile-to-web mappings**
-
-Before anything else, consult the `mobile-to-web-mappings` skill in the
-`design-system` plugin. That skill is the authoritative source for generic
-mobile→web translations that apply across every synced feature: design-system
-primitives (e.g. mobile `<Button>` → web `<Button>`, `<Touchable>` →
-`<Pressable>`), navigation APIs, platform shims, image/asset handling, and
-similar universal mappings.
-
-If the mapping exists there, apply it silently and continue. Do not surface
-it to the user, and do not record it in the feature CLAUDE.md — generic
-mappings are not feature-specific overrides, and duplicating them in every
-feature's CLAUDE.md would create drift the moment the design system changes.
-
-If the `mobile-to-web-mappings` skill is not available in this environment,
-proceed as if no generic mapping was found, but mention this in the sync
-report so the user knows generic mappings could not be auto-applied.
-
-**Step 2 — Check feature-specific overrides**
-
-Read the `## Sync` section of the destination CLAUDE.md. If an entry under
-"Feature-specific overrides" already covers this conflict, apply it silently
-and continue. Do not surface it to the user again.
-
-**Step 3 — Investigate the destination codebase**
-
-If neither generic mappings nor feature-specific overrides resolve the
-conflict, search the destination codebase for the established pattern for
-this kind of construct:
-- Files adjacent to the destination file (same feature, same directory)
-- Other already-synced feature pairs (find CLAUDE.md files with sync metadata)
-- Shared components or utilities in the project's design system or shared
-  packages
-
-The goal is to find what already exists in the destination, not to invent a
-new approach.
-
-**Step 4 — Surface the single conflict**
-
-Send one message containing exactly one conflict:
-
-> "Conflict in `<file>`:
-> - Source uses: `<what the source has, with import path>`
-> - Found in destination codebase: `<what you found, with file reference>`
->
-> Should I use `<found alternative>` here, or something else?"
-
-Wait for the user's response before doing anything else — do not read ahead,
-do not port the next file, do not look for more conflicts.
-
-**Step 5 — Verify and confirm**
-
-Check that the user's confirmed alternative exists in the codebase and fits
-the context. If something seems wrong (missing import, wrong API shape), say
-so. Keep iterating until the user explicitly confirms.
-
-**Step 6 — Classify the resolution, then record and continue**
-
-After explicit confirmation, decide where the resolution belongs:
-
-- **Generic mapping** (would apply to any feature being synced — e.g. a
-  design-system component swap, a navigation API substitution, a platform
-  shim): do NOT add it to the feature CLAUDE.md. Surface this to the user:
-  > "This looks like a generic mobile→web mapping, not specific to this
-  > feature. I'd recommend adding it to the `mobile-to-web-mappings` skill
-  > in the `design-system` plugin so every future sync picks it up
-  > automatically. Want me to flag this for that skill in the sync report?"
-  Apply the resolution to the current file and any other files in this run
-  that hit the same conflict, and include it in the sync report under
-  "Generic mappings to promote".
-
-- **Feature-specific override** (only makes sense for this feature — e.g. a
-  copy difference, a business-rule deviation, a one-off integration the
-  feature needs on web but not on mobile): add it to the destination
-  CLAUDE.md under "Feature-specific overrides" with a brief note on why
-  it's specific to this feature. Apply it to the current file and any
-  subsequent file in this run that has the same conflict — do not re-ask.
-
-When in doubt about the classification, ask the user one short question
-rather than guessing.
-
-### Handling new vs updated files
-
-- **File exists in source, exists in destination**: overwrite destination with
-  the ported source content (respecting exceptions/exclusions).
-- **File exists in source, missing in destination**: create it.
-- **File exists in destination, missing in source**: do NOT delete it
-  automatically. Add it to the sync report under "Files in destination not
-  found in source — review manually". The user may have added platform-specific
-  files that should be preserved.
-
-### Sync report
-
-After completing, print a structured report:
-
-```
-## Sync report: <source> → <destination>
-
-**Files synced:** <count>
-**Files skipped (excluded):** <count>
-  - <file>: <reason>
-
-**Files created (new in destination):** <count>
-  - <list>
-
-**Files in destination not found in source — review manually:**
-  - <list, or "None">
-
-**Generic mappings applied (from `mobile-to-web-mappings` skill):**
-  - <source pattern> → <destination pattern>: applied to <n> files
-  - <note "skill unavailable in this environment" if it couldn't be consulted>
-
-**Feature-specific overrides applied (from destination CLAUDE.md):**
-  - <source pattern> → <destination pattern>: applied to <n> files
-
-**New feature-specific overrides recorded this run:**
-  - <source pattern> → <destination pattern>: confirmed by user, added to feature CLAUDE.md (reason: <why this is feature-specific>)
-
-**Generic mappings to promote (suggest adding to `mobile-to-web-mappings` skill):**
-  - <source pattern> → <destination pattern>: confirmed by user this run, not yet in the design-system skill
-```
-
-

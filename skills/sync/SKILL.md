@@ -113,29 +113,32 @@ for this feature:
 
 ### Step 3 — Confirm scope with the user
 
-> "Setting up the sync contract for the `<feature>` modal flow:
+Do not enumerate the orchestrator scope in the message — the orchestrator
+is always synced and listing it invites stale documentation. Ask only about
+screens:
+
+> "Setting up the sync contract for the `<feature>` modal flow. The
+> orchestrator (modal shell, providers, navigator/stepper, shared hooks,
+> state, types) always ports as-is.
 >
-> **Orchestrator (always synced):** modal shell, providers, navigator/
-> stepper, shared hooks, state, types — `src/index.ts`, `src/providers/`,
-> `src/hooks/`, `src/state/`, `src/types/`, `src/utils/`, navigator files
->
-> **Screens / modal steps (opt-in):**
+> Screens / modal steps (opt-in):
 >  - `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
 >  - `ReviewScreen` (`screens/review-screen.tsx`)
 >  - `SummaryScreen` (`screens/summary-screen.tsx`) — contains the
 >    `IdentityVerification` sub-flow (its screens mount as steps under
 >    this one)
 >
-> Which screens should I port now? (all / none / list) Unselected ones get
-> recorded as exclusions."
+> Which screens port now? (all / none / list) Unselected screens get a
+> per-screen section marked `— out of scope`."
 
-Sub-components and sub-flow screens of an excluded screen are also excluded
-— they move with their parent. Wait for confirmation.
+Sub-components and sub-flow screens of an excluded screen move with their
+parent. Wait for confirmation.
 
 ### Step 4 — Write CLAUDE.md files
 
-Use the templates under "CLAUDE.md templates". Fill in orchestrator
-description, in-scope screens, and exclusions.
+Use the templates under "CLAUDE.md templates". Write each screen as its own
+`#### Screen: <Name> — in scope|out of scope` section. Do not produce a
+separate "in-scope screens" list — the per-screen headings carry status.
 
 ### Step 5 — Sync
 
@@ -149,21 +152,15 @@ sync report.
 ### Step 1 — Migrate CLAUDE.md format if needed
 
 The destination `CLAUDE.md` `## Sync` section may have been written by an
-older version of this skill, with a different structure (for example: flat
-"Explicit exclusions" and "Feature-specific overrides" lists at the top
-level, no `### Exceptions` heading, no per-screen `#### Screen: <Name>`
-groups, no "Screens in source excluded from sync" / "Screens in destination
-not present in source" sections). Before reading scope or exceptions,
-compare the existing structure to the template in "CLAUDE.md templates"
-below. The current template requires:
+older version of this skill. Before reading scope or exceptions, compare
+its structure to the template in "CLAUDE.md templates" below. The current
+template requires:
 
-- `### Orchestrator layer (always synced verbatim)` heading
-- `### In-scope screens` heading
+- `### Source of truth: mobile only` heading
 - `### Exceptions` heading with these subsections:
   - `#### Orchestrator layer`
-  - One `#### Screen: <Name>` per in-scope screen
-  - `#### Screens in source excluded from sync`
-  - `#### Screens in destination not present in source`
+  - One `#### Screen: <Name> — in scope|out of scope|destination-only` per
+    screen (status carried inline on the heading)
 
 If any required heading is missing, the format is outdated. Migrate it
 following these rules:
@@ -172,28 +169,31 @@ following these rules:
    reference may be dropped during migration. Re-shuffle into the new
    structure — never delete.
 2. **Re-slot by where each entry applies:**
-   - Old flat "Explicit exclusions" entries naming screens → "Screens in
-     source excluded from sync".
-   - Old flat "Platform-specific files owned by this directory" entries
-     naming whole destination-only screens → "Screens in destination not
-     present in source". File-level entries (not whole screens) → the
-     "Platform-specific files owned by destination" entry of the owning
-     group (orchestrator if the file sits outside any screen tree,
-     otherwise the matching `#### Screen:` group).
-   - Old flat "Feature-specific overrides" → decide owning group from the
-     file reference each entry cites. Move accordingly. Overrides applying
-     across multiple screens go once under the orchestrator group rather
-     than duplicated per screen. If ownership is ambiguous (no file
-     reference, or the entry applies broadly), keep it under the
-     orchestrator group and flag it in the migration summary.
-3. **Add any missing required headings** using the current template,
-   including the explanatory text under `### Exceptions`.
-4. **Apply the same check to the source `CLAUDE.md`.** Its `## Sync` section
-   is shorter — confirm the "Rules for agents working here" block matches
-   the current template and the cross-reference to the destination path
-   is accurate.
+   - Old `### In-scope screens` list → drop the list. Each named screen
+     becomes a `#### Screen: <Name> — in scope` heading.
+   - Old `### Orchestrator layer (always synced verbatim)` descriptive
+     paragraph → drop. The orchestrator scope is implicit.
+   - Old `#### Screens in source excluded from sync` entries → each becomes
+     a `#### Screen: <Name> — out of scope` heading with the recorded
+     reason as its body.
+   - Old `#### Screens in destination not present in source` entries →
+     each becomes a `#### Screen: <Name> — destination-only` heading.
+   - Old flat "Explicit exclusions" or "Feature-specific overrides" entries
+     → decide owning group from the file reference each entry cites. Move
+     to that group. Overrides applying across multiple screens go once
+     under the orchestrator group rather than duplicated per screen.
+     Ambiguous entries (no file reference) stay under the orchestrator
+     group and surface in the migration summary.
+   - Old "Platform-specific files owned by destination" file-level entries
+     → fold into the owning group's bullet list.
+3. **Add the `### Source of truth: mobile only` heading** if missing,
+   using the template wording.
+4. **Apply the same check to the source `CLAUDE.md`.** Its `## Sync`
+   section is shorter — confirm the "Rules for agents working here" block
+   matches the current template and the cross-reference to the destination
+   path is accurate.
 
-After migration, surface a brief summary before proceeding:
+After migration, surface a brief summary:
 
 > "Migrated `<destination>/CLAUDE.md` from an older sync format. No entries
 > dropped. Moved <n> exclusions, <n> overrides, <n> platform-specific
@@ -207,23 +207,21 @@ Only after migration (or a clean skip) proceed to Step 2.
 
 ### Step 2 — Detect scope drift
 
-From destination CLAUDE.md `## Sync`, extract:
-- Recorded orchestrator description
-- **In-scope screens** (each `#### Screen: <Name>` subsection counts)
-- **Screens in source excluded from sync**
-- **Screens in destination not present in source**
+From destination CLAUDE.md `## Sync`, walk every `#### Screen: <Name> —
+<status>` heading. The status suffix (`in scope`, `out of scope`,
+`destination-only`) is the source of truth for each screen's classification.
 
 Recompute screens in source (Phase 3A Step 2 rule) and list current
 destination screen files. Classify each:
 
 | Bucket | Definition | Action |
 |---|---|---|
-| **In sync** | In source + destination, recorded as in-scope | Content-drift check (Step 4) |
-| **New in source** | In source, not in destination, not in "Screens in source excluded from sync" | Ask user (Step 3) |
-| **Orphan in destination** | In destination, not in source, not in "Screens in destination not present in source" | Ask user (Step 3) |
-| **Already excluded** | Listed in either exclusion section | Leave alone |
+| **In sync** | In source + destination, heading marked `— in scope` | Content-drift check (Step 4) |
+| **New in source** | In source, no `#### Screen` heading for it | Ask user (Step 3) |
+| **Orphan in destination** | In destination, no `#### Screen` heading for it | Ask user (Step 3) |
+| **Already recorded** | Heading marked `— out of scope` or `— destination-only` | Leave alone |
 
-If every screen is "In sync" or "Already excluded", skip Step 3.
+If every screen is "In sync" or "Already recorded", skip Step 3.
 
 ### Step 3 — Reconcile scope drift
 
@@ -241,12 +239,12 @@ then record decisions individually.
 
 Persist each resolution to CLAUDE.md immediately:
 
-- **Port now** → add to "In-scope screens" + create empty `#### Screen: <Name>`
-  subsection under "Exceptions".
-- **Exclude from sync** → add to "Screens in source excluded from sync" with
-  reason (or `(no reason given)`).
-- **Preserve as destination-only** → add to "Screens in destination not
-  present in source" with reason.
+- **Port now** → create a `#### Screen: <Name> — in scope` section under
+  "Exceptions" (empty body if no overrides yet).
+- **Exclude from sync** → create `#### Screen: <Name> — out of scope` with
+  the reason as its body (or `(no reason given)`).
+- **Preserve as destination-only** → create `#### Screen: <Name> —
+  destination-only` with the reason as its body.
 - **Skip this run** → no CLAUDE.md change; drift surfaces again next run.
 - **Delete** (orphan only) → confirm explicitly first, since this is
   destructive:
@@ -269,19 +267,16 @@ For divergences not covered by any recorded rule, fall back to the
 platform-conflict process in "Sync mechanics" (one conflict, one file, one
 user response, continue).
 
-The destination is never a source of truth. Any unrecorded drift is treated
-as accidental and overwritten. To keep destination-only behavior, the user
-must record it under "Feature-specific overrides" or under one of the
-"Platform-specific files" lists.
+The destination is never a source of truth. Any unrecorded drift is
+treated as accidental and overwritten. To keep destination-only behavior,
+the user must record it as a bullet under the owning group in "Exceptions"
+or as a "Platform-specific files owned by destination" entry under the
+orchestrator group.
 
 ### Step 5 — Emit sync report
 
-Standard format (see "Sync mechanics") with a drift-resolution header:
-
-```
-## Scope drift resolved this run
-- <screen>: <decision> (recorded as <where>)
-```
+Use the standard format (see "Sync mechanics"). Populate the "Scope drift
+resolved" and "Stale exceptions removed" sections from this phase.
 
 ---
 
@@ -367,6 +362,117 @@ For each file in the active scope (orchestrator + in-scope screens):
    the same structural role.
 4. Otherwise: write the ported content, creating directories as needed.
 
+### Grounding every exception in code
+
+Before writing any exception entry — in the orchestrator group, a per-screen
+group, or as part of platform-conflict resolution — the entry must reference
+real code on **both sides**:
+
+- The **source pattern** it replaces (file path + symbol that exists in the
+  current source tree).
+- The **destination alternative** it picks (file path + symbol that exists
+  in the destination tree, or a clear "destination-only file" marker).
+
+If either citation cannot be produced, the exception does not get written.
+Exceptions without code grounding rot the moment the feature evolves and
+make the document harder to trust on every later run. During re-runs, any
+recorded exception whose cited source or destination no longer exists is
+flagged for the user — "cited code is gone; keep or remove?" — never
+preserved silently.
+
+Anti-patterns to avoid:
+
+- **Inventing exceptions.** Do not record a deviation unless porting the
+  source actually surfaced one. If the source has no per-row timing logic,
+  the destination doc must not claim one was dropped.
+- **Carrying stale entries.** During Phase 3B, re-verify each existing
+  entry against current code before re-emitting it. If the pattern it
+  describes no longer appears in source, it goes.
+- **Restating defaults.** Do not record entries that repeat what the sync
+  contract already guarantees or what generic mappings already cover. See
+  "What is not an exception" below.
+- **Compound entries.** One bullet, one pattern. If you find yourself
+  joining two unrelated facts with "and" or "also" inside a single bullet
+  ("API replaced with X **and** haptics dropped"), split them. Compound
+  entries hide overlap on re-runs and resist deduplication.
+
+### What is not an exception
+
+Before writing any bullet, run it past this filter. If it matches any of
+these, drop it — the behavior is already covered.
+
+- **Restating the verbatim contract.** "Locale key copied as-is",
+  "component name kept the same", "logic ported unchanged" — the sync
+  contract already says everything ports verbatim. Recording it as an
+  exception inverts the meaning.
+- **Generic mobile→web mappings.** Anything `mobile-to-web-mappings`
+  already covers (design-system primitives, navigation APIs, haptics,
+  animations, platform shims). These get applied silently and never
+  recorded in feature CLAUDE.md.
+- **Side effects of an existing entry.** If the orchestrator group already
+  records "provider X mounted at entry", do not re-mention provider X in
+  every per-screen entry that consumes it. Cite the provider's existence
+  by reference, not by repetition.
+- **Restated source-of-truth principle.** "When mobile lacks a value, use
+  no-op" is covered by "Source of truth: mobile only". Per-instance
+  applications of this principle ("the X variant defaults to off because
+  mobile has no equivalent") get recorded only when the no-op choice is
+  non-obvious enough that a future reader would re-derive it incorrectly.
+
+### Where each exception belongs
+
+Pick the group with the narrowest scope that still covers every use site.
+
+- **Orchestrator group** when the deviation is infrastructure shared by
+  every screen: a provider mounted at the entry, a context wrapper, a
+  shared hook, a navigator rewrite, a redirect rule. Test: "if I removed
+  any single screen tomorrow, would this still apply?" If yes →
+  orchestrator group.
+- **Per-screen group** when the deviation is specific to that screen's
+  logic and would disappear if the screen were dropped: a screen-local
+  component swap, a screen-local data-fetch rewrite, a screen-local copy
+  difference.
+
+When porting flags an infrastructure deviation while resolving a
+screen-level file, record the infrastructure piece at the orchestrator
+level and the screen-local consequence (if any) at the screen level.
+Never record the same pattern in both groups.
+
+### Before writing, dedupe
+
+When about to record a new entry:
+
+1. Scan the orchestrator group's bullets for the same source pattern,
+   destination symbol, or theme.
+2. Scan the owning screen's bullets too.
+3. If a match exists, merge into the existing bullet (clarify wording,
+   add a missing citation) instead of adding a new one.
+4. If the new entry restates a default per "What is not an exception",
+   drop it entirely.
+
+### Feature flags
+
+Feature-flag **names** may differ between mobile and web. When porting a
+file that reads a flag whose name has no obvious web equivalent, ask the
+user once for the web name, write the literal into the destination code,
+and move on. Do not record specific flag mappings in CLAUDE.md — flag names
+change, and a stale list outside the code becomes a trap. The orchestrator
+group may carry one short rule noting that flag names are confirmed
+per-sync and held in code; nothing more.
+
+### Generic phrasing for orchestrator rules
+
+Orchestrator-level entries describe patterns that apply across the whole
+flow. Do not name specific screens or files as illustrative examples — the
+screens cited go stale before the pattern does. Phrase the rule in terms of
+the structure it governs ("redirect navigation targeting an out-of-scope
+screen to the placeholder"), not in terms of the screens that happen to
+trigger it today.
+
+Per-screen entries are the right place for screen-specific filenames and
+symbols, because they live next to the screen they describe and rot
+together with it.
+
 ### Resolving platform conflicts
 
 Port verbatim. When you hit something that cannot be carried over as-is — a
@@ -397,13 +503,12 @@ system changes).
 If the skill is unavailable, proceed as if no mapping was found and note it
 in the sync report.
 
-**Step 2 — Check feature-specific overrides**
+**Step 2 — Check feature-specific exceptions**
 
-Identify which exception group owns the file: orchestrator layer, or the
-specific screen whose tree contains it. Check that group's
-"Feature-specific overrides" first, then fall back to the orchestrator
-group (screens inherit orchestrator-level overrides). If matched, apply
-silently.
+Identify which group owns the file: orchestrator layer, or the specific
+screen whose tree contains it. Check that group's bullets in "Exceptions"
+first, then fall back to the orchestrator group (screens inherit
+orchestrator-level rules). If matched, apply silently.
 
 **Step 3 — Investigate the destination codebase**
 
@@ -444,13 +549,15 @@ After confirmation:
   Apply to the current file plus any other file in this run with the same
   conflict; list under "Generic mappings to promote" in the report.
 
-- **Feature-specific override** (only meaningful for this feature — copy
-  difference, business-rule deviation, one-off integration): record under
-  the **owning group's** "Feature-specific overrides" — orchestrator group
-  if the file is outside any screen, otherwise the `#### Screen: <Name>`
-  group. If the same override would apply across multiple screens, record
-  it once at the orchestrator level instead of duplicating. Include a brief
-  reason. Apply to subsequent matching files this run; don't re-ask.
+- **Feature-specific exception** (only meaningful for this feature — copy
+  difference, business-rule deviation, one-off integration): record as a
+  bullet under the **owning group** in "Exceptions" — orchestrator group
+  if the file is outside any screen, otherwise the `#### Screen: <Name> —
+  in scope` group. If the same exception would apply across multiple
+  screens, record it once at the orchestrator level (phrased generically,
+  no screen-name examples) instead of duplicating. Cite the source pattern,
+  the destination alternative, and a brief reason. Apply to subsequent
+  matching files this run; don't re-ask.
 
 When unsure, ask the user one short classification question.
 
@@ -465,44 +572,32 @@ When unsure, ask the user one short classification question.
 
 ### Sync report
 
+Keep the report short. Omit empty sections.
+
 ```
 ## Sync report: <source> → <destination>
 
 **Run mode:** <first run | re-run>
 
-**CLAUDE.md format migration:** (re-run only, omit if format was current)
-  - Migrated `<destination>/CLAUDE.md` to the latest sync format. Moved
-    <n> exclusions, <n> overrides, <n> platform-specific entries. No
-    entries dropped. Ambiguous entries kept under orchestrator group:
-    <list, or "None">.
+**Files synced:** <count> (created: <n>, overwritten: <n>, skipped: <n>)
 
-**Scope drift resolved this run:** (re-run only)
-  - <screen>: <decision> (recorded as <where>)
+**Scope drift resolved:** (re-run only)
+  - <screen>: <decision>
 
-**Files synced:** <count>
-**Files skipped (excluded):** <count>
-  - <file>: <reason>
+**CLAUDE.md format migrated:** (re-run only)
+  - <one-line summary; ambiguous entries listed if any>
 
-**Files created (new in destination):** <count>
-  - <list>
+**Stale exceptions removed:** (re-run only)
+  - <entry>: cited source/destination no longer present
 
-**Files in destination not found in source — review manually:**
-  - <list, or "None">
-
-**Generic mappings applied (from `mobile-to-web-mappings` skill):**
-  - <source pattern> → <destination pattern>: applied to <n> files
-  - (note "skill unavailable in this environment" if it couldn't be consulted)
-
-**Feature-specific overrides applied (from destination CLAUDE.md):**
-  - <source pattern> → <destination pattern>: applied to <n> files
-
-**New feature-specific overrides recorded this run:**
-  - <source pattern> → <destination pattern>: added to feature CLAUDE.md
-    (reason: <why feature-specific>)
+**New feature-specific overrides recorded:**
+  - <source pattern> → <destination pattern>: <reason>
 
 **Generic mappings to promote (suggest adding to `mobile-to-web-mappings`):**
-  - <source pattern> → <destination pattern>: confirmed this run, not yet
-    in the design-system skill
+  - <source pattern> → <destination pattern>
+
+**Files in destination not found in source — review manually:**
+  - <list>
 ```
 
 ---
@@ -547,81 +642,73 @@ This directory is a **synced port** of `<relative path to source>`.
 **Synced from:** `<relative path to source>`
 
 ### CRITICAL — do not modify this directory directly
-Agents and contributors must NOT modify files in this directory for logic
-changes. The only correct workflow is:
-1. Modify the source at `<source path>`
-2. Run `/sync` to propagate changes here (requires the `sync` skill)
-3. Only make platform-specific adjustments (listed in "Approved exceptions"
-   below) directly in this directory
 
-If you are about to change logic here (component behavior, hooks, utilities,
-business rules), **stop** and make the change in the source instead, then run
-`/sync`. If the `sync` skill is not available in your environment, do not
-attempt to port the changes manually — notify the user and ask them to check
-`CODEOWNERS` for the source directory to contact the responsible team.
+Do not edit files here for logic changes. Workflow:
+
+1. Modify the source at `<source path>`
+2. Run `/sync` to propagate
+3. Only platform-specific adjustments listed under "Exceptions" go here
+   directly
+
+If `/sync` is unavailable, do not hand-port. Notify the user and check
+`CODEOWNERS` on the source.
 
 ### Sync contract
-This directory is a verbatim 1-to-1 port of the source. Component names, file
-and folder names, directory hierarchy, logic, utility functions, variable
-names, and code comments all match the source exactly.
+
+This directory is a verbatim 1-to-1 port. Component names, file and folder
+names, hierarchy, logic, utilities, variable names, and code comments match
+the source exactly.
 
 Generic mobile→web translations (design-system primitives, navigation APIs,
-platform shims, and any mapping that applies across every synced feature)
-are NOT recorded here. They live in the `mobile-to-web-mappings` skill in
-the `design-system` plugin and are applied automatically by `/sync`. Only
-record exceptions in the section below if they are **specific to this
-feature** — a deviation that does not apply to other synced features.
+platform shims) live in the `mobile-to-web-mappings` skill and are applied
+automatically by `/sync`. Record only **feature-specific** exceptions
+below.
 
-### Orchestrator layer (always synced verbatim)
-<describe the orchestrator file set in a few lines — modal shell, providers,
-navigator (mobile) / stepper (web), shared hooks, state, types. E.g.: "entry
-point, modal shell at src/modal/, providers under src/providers/, shared
-hooks under src/hooks/, navigator at src/navigation/, types under src/types/".
-This is the set of files /sync re-syncs unconditionally on every run; the
-user does not opt into it screen-by-screen.>
+### Source of truth: mobile only
 
-### In-scope screens (modal steps on web)
-<list each screen currently part of the sync. Sub-flow screens are part of
-their parent screen's sub-tree and are not listed separately unless the user
-has explicitly excluded sibling screens within the same sub-flow. E.g.:>
-- `ConfirmationScreen` (`screens/confirmation-screen.tsx`)
-- `ReviewScreen` (`screens/review-screen.tsx`)
-- `SummaryScreen` (`screens/summary-screen.tsx`) — contains the
-  `IdentityVerification` sub-flow
+Mobile is the sole source of behavior for this flow. Do not borrow
+decisions, default values, or business rules from other packages. When web
+requires a value mobile lacks, choose the no-op or off state and surface
+the gap during sync; do not invent a value.
 
 ### Exceptions
 
-Exceptions are grouped by **where they apply**. When porting a file, `/sync`
-locates the group that owns it (orchestrator layer or a specific screen) and
-applies entries from that group only. A file is owned by a screen if it lives
-under the screen's sub-tree or is imported exclusively by that screen;
-everything else (entry point, providers, navigators, shared hooks, utilities,
-state, types, and any component reachable from more than one screen) belongs
-to the orchestrator layer.
+Exceptions are grouped by **where they apply**. `/sync` resolves each file
+to either the orchestrator group or a specific screen. A file belongs to a
+screen if it lives under that screen's sub-tree or is imported only by
+that screen; everything else belongs to the orchestrator layer.
+
+Every entry below cites a real pattern in the source and a real
+alternative in the destination. Entries without code grounding rot; if the
+cited code disappears, the entry goes with it.
 
 #### Orchestrator layer
 
-**Feature-specific overrides (confirmed by user during sync runs):**
-<list each override as: "source uses X → destination uses Y (file reference where pattern was found, brief reason it's specific to this feature)"; or "None" if none yet>
+<list each orchestrator-level deviation as a bullet: name the pattern,
+cite the source file/symbol, cite the destination file/symbol, give a
+brief reason. Phrase rules generically — do not use specific screen names
+as illustrative examples; per-screen detail belongs in per-screen
+sections. One short rule on feature-flag handling lives here ("flag names
+confirmed per-sync, held in code"). "None" if no deviations yet.>
 
 **Platform-specific files owned by destination (not synced):**
-<list orchestrator-layer files that exist only on the destination platform — e.g. platform navigation wrappers, wallet integrations; or "None">
+<list orchestrator-layer files with no mobile counterpart — e.g. the web
+entry component, platform navigation wrappers. Each entry cites the
+destination file. "None" if empty.>
 
-#### Screen: `<ScreenName>` (`<path>`)
+#### Screen: `<ScreenName>` (`<path>`) — in scope
 
-**Feature-specific overrides:**
-<list, or "None">
+<list per-screen deviations as bullets. Each cites a source pattern and a
+destination alternative. "No screen-specific overrides." if empty.>
 
-**Platform-specific files owned by destination (not synced):**
-<list sub-components or helpers under this screen's tree that exist only on the destination platform, or "None">
+<repeat one `#### Screen` heading per screen the sync touches. Use the
+status suffix that fits:>
+- `— in scope` — ported on every run, may carry per-screen overrides
+- `— out of scope` — body explains why it is not ported; no overrides
+- `— destination-only` — body explains why it exists only on the
+  destination side (e.g. a placeholder for redirected navigation); no
+  source counterpart
 
-<repeat one section per in-scope screen>
-
-#### Screens in source excluded from sync
-
-<list each excluded source screen as: "`<ScreenName>` (`<source path>`) — <reason>"; or "None">
-
-#### Screens in destination not present in source
-
-<list each destination-only screen as: "`<ScreenName>` (`<destination path>`) — <reason it is preserved>"; or "None">
+<sub-flow screens belong inside their parent screen's section unless the
+user has explicitly carved them out.>
 ```
